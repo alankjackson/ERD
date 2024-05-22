@@ -1,0 +1,21 @@
+---
+title: "First Street Flood data - Harris County"
+author: "Alan Jackson"
+format: html
+editor: source
+---
+
+## Make a map of Fist Street flood darta for Harris county
+
+```{r setup}
+
+library(tidyverse)
+
+path <- "/home/ajackson/Dropbox/Rprojects/TexasDioceseCreationCare/Data/"
+output_path <- "/home/ajackson/Dropbox/projects/CeationCareTaskforce/FirstStreetFlood/"
+
+#   Some useful data
+
+Census <- readRDS(paste0(path, "Census_data_for_Texas_by_tract.rds"))
+
+```
