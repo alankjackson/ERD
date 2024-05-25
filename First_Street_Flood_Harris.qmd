@@ -232,3 +232,43 @@ for (map_var in c("Fact3_grp", "Fact5_grp", "Fact8_grp")){
   
 ```
 
+##        Explore the data combined with census
+
+```{r}
+
+df2 %>% 
+  ggplot(aes(x=count_floodfactor8)) +
+  geom_histogram() +
+  labs(y="Number of Census Tracts",
+       x="Number of Flood Factor 8 Properties",
+       title="Harris County, Flood Factor 8, Properties per Census Tract")
+
+df2 %>% 
+  filter(count_floodfactor8>249) %>% 
+  ggplot(aes(x=count_floodfactor8)) +
+  geom_histogram() +
+  labs(y="Number of Census Tracts",
+       x="Number of Flood Factor 8 Properties",
+       title="Harris County, Flood Factor 8, Properties per Census Tract",
+       subtitle="Only Tracts with > 250 Properties")
+
+df2 %>% 
+  mutate(sumFact3=count_floodfactor3 + count_floodfactor4 + count_floodfactor5 +
+           count_floodfactor6 + count_floodfactor7 + count_floodfactor8 +
+           count_floodfactor9 + count_floodfactor10) %>% 
+  mutate(Fact3=count_floodfactor3/count_property*100) %>%
+  ggplot(aes(x=Med_incE, y=Fact3)) +
+  geom_point() +
+  labs(x="Median Income within Census Tract",
+       y="Percent Houses with Flood Factor >= 3",
+       title="Percent Flood Factor >= 3 vs. Median Income")
+
+
+```
+
+
+
+
+
+
+
