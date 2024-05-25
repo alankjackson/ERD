@@ -5,17 +5,230 @@ format: html
 editor: source
 ---
 
-## Make a map of Fist Street flood darta for Harris county
+## Make a map of First Street flood darta for Harris county
 
 ```{r setup}
 
 library(tidyverse)
 
 path <- "/home/ajackson/Dropbox/Rprojects/TexasDioceseCreationCare/Data/"
-output_path <- "/home/ajackson/Dropbox/projects/CeationCareTaskforce/FirstStreetFlood/"
+plots_path <- "/home/ajackson/Dropbox/Rprojects/ERD/Plots/"
 
 #   Some useful data
 
 Census <- readRDS(paste0(path, "Census_data_for_Texas_by_tract.rds"))
 
 ```
+
+## Make little graphs of flood factor for plot insets
+
+```{r factor insets}
+
+FF3 <- tribble(~Depth, ~Risk,
+               12.,     0.01,
+               7.5,     0.05,
+               4.5,     0.08,
+               2.0,     0.12)
+
+FF5 <- tribble(~Depth, ~Risk,
+               30.0,   0.03,
+               18.0,   0.09,
+               8.0,    0.20,
+               5.0,    0.30,
+               2.0,    0.40 )
+
+FF8 <- tribble(~Depth, ~Risk,
+               30.0,   0.30,
+               18.0,   0.40,
+               10.0,   0.70,
+               4.0,    0.98
+              )
+
+pFF3 <- FF3 %>% ggplot(aes(x=Risk, y=Depth)) +
+  geom_point(size=0.5) +
+  geom_smooth(se=FALSE, span=1, linewidth=0.5) +
+  theme(plot.title = element_text(size = 4),
+        axis.text.x = element_text(size = 4),
+        axis.text.y = element_text(size = 4),
+        axis.title.x = element_text(size = 4),
+        axis.title.y = element_text(size = 4))+
+  labs(title="Flood Factor 3",
+       x="30-Year Cumulative Risk",
+       y="Flood Depth (in)") +
+  scale_x_continuous(labels = scales::percent)
+
+pFF5 <- FF5 %>% ggplot(aes(x=Risk, y=Depth)) +
+  geom_point(size=0.5) +
+  geom_smooth(se=FALSE, span=1, linewidth=0.5) +
+  theme(plot.title = element_text(size = 4),
+        axis.text.x = element_text(size = 4),
+        axis.text.y = element_text(size = 4),
+        axis.title.x = element_text(size = 4),
+        axis.title.y = element_text(size = 4))+
+  labs(title="Flood Factor 5",
+       x="30-Year Cumulative Risk",
+       y="Flood Depth (in)") +
+  scale_x_continuous(labels = scales::percent)
+
+pFF8 <- FF8 %>% ggplot(aes(x=Risk, y=Depth)) +
+  geom_point(size=0.5) +
+  geom_smooth(se=FALSE, span=1, linewidth=0.5) +
+  theme(plot.title = element_text(size = 4),
+        axis.text.x = element_text(size = 4),
+        axis.text.y = element_text(size = 4),
+        axis.title.x = element_text(size = 4),
+        axis.title.y = element_text(size = 4))+
+  labs(title="Flood Factor 8",
+       x="30-Year Cumulative Risk",
+       y="Flood Depth (in)") +
+  scale_x_continuous(labels = scales::percent)
+
+```
+
+
+## Read the data in by census tract and filter out Harris county
+
+```{r}
+
+#   Read in and restrict to Harris county
+df <- read_csv(paste0(path, "FSF_Flood/fsf_flood_tract_summary.csv")) %>% 
+  rename(GEOID=fips) %>% 
+  filter(stringr::str_starts(GEOID, "48201"))
+
+#   Add polygons and census data
+
+df2 <- inner_join(df, Census, by="GEOID") %>%
+  sf::st_as_sf() %>% 
+  sf::st_make_valid()
+
+# #   Add Convocations and filter out data ouside the diocese
+# 
+# Convocations <- Convocations %>% 
+#   sf::st_drop_geometry() %>% 
+#   unnest_longer(Tract) %>% 
+#   filter(Tract != "48071710600") %>% # unoccupied spoil banks in Galveston Bay
+#   rename(GEOID=Tract) 
+# 
+# Convocations <- left_join(Convocations, df2, by="GEOID")
+
+# Tract_geoms <- Census %>% 
+#   select(Tract=GEOID)  
+
+# Convocations <- Convocations %>% 
+#   mutate(Name=stringr::str_remove(Name, " Convocation| Region")) %>% 
+#   # left_join(., Tract_geoms, by="Tract") %>% 
+#   sf::st_as_sf()
+
+# df2 %>%
+#   mutate(Fact5=count_floodfactor5/count_property*100) %>% 
+#   # mutate(count_floodfactor10=pmin(count_floodfactor10, 100)) %>% 
+#   ggplot() + 
+#   geom_histogram(aes(x=Fact5))
+
+# df3 <- Convocations %>% 
+#   mutate(Fact5=count_floodfactor5/count_property*100)  
+
+df3 <- df2 %>% 
+  mutate(Fact5=count_floodfactor5/count_property*100)
+  
+  
+
+#   make a diagnostic map
+
+tmap::tmap_options(basemaps="OpenStreetMap")
+
+tmap::tmap_mode("view") # set mode to interactive plots
+
+tmap::tm_shape(df3) + 
+    #tmap::tm_sf(col="ConvoColor", alpha=0.3) +
+  tmap::tm_fill(col = "Fact5", title = "Flood Factor 5 Percent", alpha=0.6, style="pretty")+
+  tmap::tm_borders(lwd=0.1) 
+
+
+
+```
+
+## Make maps of flood factor 3, 5, and 8 colored by percent houses affected for the diocese
+
+```{r more county maps}
+
+foo <- df2 %>% 
+  arrange(GEOID) %>% 
+  filter(!duplicated(GEOID)) %>% 
+  mutate(Fact3=count_floodfactor3/count_property*100) %>%  
+  mutate(Fact5=count_floodfactor5/count_property*100) %>% 
+  mutate(Fact8=count_floodfactor8/count_property*100)  
+
+foo %>% ggplot(aes(x=Fact3)) +
+  geom_histogram()
+
+foo <- foo %>% 
+  mutate(Fact3_grp = cut(Fact3,
+                     breaks=c(0,5,10,20,40,100),
+                     labels=c("0%-5%", "5%-10%", "10%-20%", "20%-40%", "40%-100%"),
+                     include.lowest = TRUE)) %>% 
+  mutate(Fact5_grp = cut(Fact5,
+                     breaks=c(0,5,10,20,40,100),
+                     labels=c("0%-5%", "5%-10%", "10%-20%", "20%-40%", "40%-100%"),
+                     include.lowest = TRUE)) %>% 
+  mutate(Fact8_grp = cut(Fact8,
+                     breaks=c(0,5,10,20,40,100),
+                     labels=c("0%-5%", "5%-10%", "10%-20%", "20%-40%", "40%-100%"),
+                     include.lowest = TRUE))
+
+  box <- foo %>%
+    sf::st_bbox() 
+  
+  Base_basemapR <- basemapR::base_map(box, basemap="mapnik", increase_zoom=2)
+  
+ #Colour Palette
+pal <- c(
+  "40%-100%" = "red",
+  "20%-40%" = "orange", 
+  "10%-20%" = "yellow", 
+  "5%-10%" = "lightgreen",
+  "0%-5%" = "white" 
+)                          
+
+for (map_var in c("Fact3_grp", "Fact5_grp", "Fact8_grp")){
+  
+  if (map_var == "Fact3_grp") {Plot_inset <- pFF3}
+  if (map_var == "Fact5_grp") {Plot_inset <- pFF5}
+  if (map_var == "Fact8_grp") {Plot_inset <- pFF8}
+  
+  
+  Plot_title <- case_when(
+    map_var == "Fact3_grp" ~ "Flood Factor 3 by Census Tract",
+    map_var == "Fact5_grp" ~ "Flood Factor 5 by Census Tract",
+    map_var == "Fact8_grp" ~ "Flood Factor 8 by Census Tract"
+  )
+  map_var <- ensym(map_var)
+  
+     p <- 
+      foo %>% 
+      ggplot() +
+      Base_basemapR +
+      geom_sf(aes(fill=!!map_var) ,alpha=0.6, lwd=0.0) +
+      scale_fill_manual( values=pal,
+                         limits=names(pal),
+                         name="Homes flooded") +
+      annotate("text", label="
+             Data sourced from First Street flood Model, June 2020 
+             Map a product of Alan Jackson", 
+             x=-Inf, 
+             y=-Inf,
+             hjust="inward", vjust="inward", size = 1.5)+
+      labs(title=Plot_title) +
+      annotation_custom(
+            grob = ggplotGrob(Plot_inset),
+            xmin = -96.5, xmax = -93.8, ymin = 33, ymax = 34.5
+    ) 
+    
+      ggsave(paste0(plots_path, "FirstStreet_Diocese_",
+                    paste(Plot_title, sep="_"),
+                    ".jpg"))
+     # print(p)
+}
+  
+```
+
