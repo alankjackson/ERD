@@ -1,0 +1,16 @@
+---
+title: "Read FEMA Flood Data"
+author: "Alan Jackson"
+format: html
+editor: source
+---
+
+##        Read a Parquet file downloaded from FEMA
+
+https://www.fema.gov/openfema-data-page/fima-nfip-redacted-claims-v2
+
+
+
+
+
+
