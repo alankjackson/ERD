@@ -34,6 +34,22 @@ saveRDS(FEMA_Harris, paste0(pq_path, "FEMA_Harris_Flood.rds"))
 
 ```
 
+##        Create an event code
+
+```{r}
+
+Fema_clean <- FEMA_Harris %>% 
+  select(dateOfLoss, ratedFloodZone, occupancyType, amountPaidOnBuildingClaim,
+         yearOfLoss, buildingDamageAmount, buildingPropertyValue,
+         buildingReplacementCost, causeOfDamage, floodEvent, waterDepth,
+         floodZoneCurrent, censusTract, censusBlockGroupFips,
+         nfipCommunityName) %>% 
+  arrange(dateOfLoss) %>% 
+  
+
+
+```
+
 ##        Look at data
 
 ```{r}
@@ -65,6 +81,55 @@ foobar <- FEMA_Harris %>%
 
 ```
 
+##        Combine with census block data
+
+```{r}
+
+#   Get block data for Harris county
+
+library(tidycensus)
+
+census_api_key("c458095036ca1037f97b9c7019b6a7ac2dbf90d4")
+
+#   All these by block group
+acs_vars_b <- c(Pop_blk_grp="B01001_001", # Total population by blk grp
+              Med_inc="B19013_001", # median household income, blk grp
+              Per_cap_inc="B19301_001", # Per capita income, blk grp
+              Aggreg_inc="B19025_001", # Aggregate household income, blk grp
+              Med_age="B01002_001") # median age, blk grp
+
+ACS_b <- get_acs(geography="block group",
+               variables=acs_vars_b,
+               year=2020,
+               state="TX",
+               county="201",
+               output="wide",
+               geometry=TRUE) 
+
+Sum_per_blk <- FEMA_Harris %>% 
+  group_by(censusBlockGroupFips) %>% 
+    summarise(Num_Claims=n(),
+              Num_dates=n_distinct(dateOfLoss))
+
+FEMA_2 <- inner_join(Sum_per_blk, ACS_b, by=join_by("censusBlockGroupFips"=="GEOID")) %>%
+  sf::st_as_sf() %>% 
+  sf::st_make_valid() %>% 
+  mutate(Claims_percap=Num_Claims/Pop_blk_grpE) %>% 
+  filter(Pop_blk_grpE>0)
+
+#   make a diagnostic map
+
+tmap::tmap_options(basemaps="OpenStreetMap")
+
+tmap::tmap_mode("view") # set mode to interactive plots
+
+tmap::tm_shape(FEMA_2) + 
+    #tmap::tm_sf(col="ConvoColor", alpha=0.3) +
+  # tmap::tm_fill(col = "Num_Claims", title = "Number of Flood Claims", alpha=0.6, style="pretty")+
+  tmap::tm_fill(col = "Claims_percap", title = "Flood Claims per capita", alpha=0.6, style="pretty")+
+  tmap::tm_borders(lwd=0.1) 
+
+```
 
 
 
