@@ -15,6 +15,8 @@ https://www.fema.gov/openfema-data-page/fima-nfip-redacted-claims-v2
 ```{r setup}
 
 library(tidyverse)
+library(gt)
+library(tidycensus)
 
 pq_path <- "/home/ajackson/Dropbox/Rprojects/ERD/Data/"
 
@@ -43,9 +45,18 @@ Fema_clean <- FEMA_Harris %>%
          yearOfLoss, buildingDamageAmount, buildingPropertyValue,
          buildingReplacementCost, causeOfDamage, floodEvent, waterDepth,
          floodZoneCurrent, censusTract, censusBlockGroupFips,
-         nfipCommunityName) %>% 
-  arrange(dateOfLoss) %>% 
+         nfipCommunityName, eventDesignationNumber) %>% 
+  arrange(dateOfLoss)  
   
+# causeOfDamage:
+# 0 : Other causes; 
+# 1 : Tidal water overflow; 
+# : Stream, river, or lake overflow; 
+# 3 : Alluvial fan overflow; 
+# 4 : Accumulation of rainfall or snowmelt; 
+# 7 : Erosion-demolition; 
+# 8 : Erosion-removal; 
+# 9 : Earth movement, landslide, land subsidence, sinkholes, etc.
 
 
 ```
@@ -87,7 +98,6 @@ foobar <- FEMA_Harris %>%
 
 #   Get block data for Harris county
 
-library(tidycensus)
 
 census_api_key("c458095036ca1037f97b9c7019b6a7ac2dbf90d4")
 
@@ -107,6 +117,12 @@ ACS_b <- get_acs(geography="block group",
                geometry=TRUE) 
 
 Sum_per_blk <- FEMA_Harris %>% 
+    select(dateOfLoss, ratedFloodZone, occupancyType, amountPaidOnBuildingClaim,
+         yearOfLoss, buildingDamageAmount, buildingPropertyValue,
+         buildingReplacementCost, causeOfDamage, floodEvent, waterDepth,
+         floodZoneCurrent, censusTract, censusBlockGroupFips,
+         nfipCommunityName) %>% 
+  filter(occupancyType %in% c(1,2,3,11,12,13,14,15)) %>% 
   group_by(censusBlockGroupFips) %>% 
     summarise(Num_Claims=n(),
               Num_dates=n_distinct(dateOfLoss))
@@ -123,14 +139,79 @@ tmap::tmap_options(basemaps="OpenStreetMap")
 
 tmap::tmap_mode("view") # set mode to interactive plots
 
-tmap::tm_shape(FEMA_2) + 
+tmap::tm_shape(FEMA_2 %>% filter(Claims_percap>1)) + 
     #tmap::tm_sf(col="ConvoColor", alpha=0.3) +
   # tmap::tm_fill(col = "Num_Claims", title = "Number of Flood Claims", alpha=0.6, style="pretty")+
-  tmap::tm_fill(col = "Claims_percap", title = "Flood Claims per capita", alpha=0.6, style="pretty")+
+  tmap::tm_fill(col = "red", title = "Flood Claims per capita", alpha=0.6, style="pretty")+
   tmap::tm_borders(lwd=0.1) 
 
 ```
 
+##        Stats for each block
+
+```{r}
+
+FreqFliers <- FEMA_2 %>% 
+  filter(Claims_percap>1) %>% 
+  select(censusBlockGroupFips, Pop_blk_grpE, Per_cap_incE) %>% 
+  sf::st_drop_geometry() %>% 
+  mutate(Label=paste("Harris", LETTERS[row_number()]))
+
+Frequent <- Fema_clean %>% 
+  filter(censusBlockGroupFips %in% FreqFliers$censusBlockGroupFips) %>% 
+  left_join(FreqFliers, by="censusBlockGroupFips")
+
+#   Make plots for each block
+
+for (i in FreqFliers$censusBlockGroupFips){
+  
+  Label <- Frequent$Label[1]
+  
+  Claims <- Frequent %>% 
+    filter(censusBlockGroupFips %in% i) %>% 
+    group_by(yearOfLoss) %>% 
+      summarise(Claims=n())
+  
+  Claims %>% ggplot(aes(x=yearOfLoss, y=Claims)) +
+    geom_bar(stat="identity") +
+    labs(
+      title=paste("Flood Events by Year"),
+      subtitle=paste("Census Blkgrp", i, Label),
+      x="Year of Loss",
+      y="Number of Claims"
+    )
+  
+  MyTable <- 
+  Claims <- Frequent %>% 
+    filter(censusBlockGroupFips %in% i) %>% 
+    group_by(floodEvent, yearOfLoss) %>% 
+      summarise(Claims=n()) %>% 
+    mutate(floodEvent=ifelse(is.na(floodEvent), "No Name", floodEvent))
+  
+  MyTable %>% 
+    arrange(yearOfLoss) %>% 
+    relocate(yearOfLoss, floodEvent, Claims) %>% 
+    ungroup() %>% 
+    filter(Claims>9) %>% 
+    gt() %>% 
+    gt::tab_header(
+      title="Large Flood Events ( >9 claims)",
+      subtitle=paste("Census Blkgrp", i, Label)
+    ) %>% 
+    cols_label(
+      yearOfLoss="Year",
+      floodEvent="Event Name",
+      Claims="Num of Claims"
+    ) %>% 
+    tab_footnote(
+      footnote="FEMA data combined with 2020 census"
+    )
+    
+  
+    
+}
+
+```
 
 
 
