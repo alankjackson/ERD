@@ -161,9 +161,33 @@ Frequent <- Fema_clean %>%
   filter(censusBlockGroupFips %in% FreqFliers$censusBlockGroupFips) %>% 
   left_join(FreqFliers, by="censusBlockGroupFips")
 
+#   Table and Plots of interesting blocks in county
+
+FEMA_2 %>% 
+  sf::st_drop_geometry() %>% 
+  filter(censusBlockGroupFips %in% FreqFliers$censusBlockGroupFips) %>% 
+  mutate(Label=paste("Harris", LETTERS[row_number()])) %>% 
+  select(censusBlockGroupFips, Label, Pop_blk_grpE, Per_cap_incE) %>% 
+  gt() %>%     
+  gt::tab_header(
+      title="Multiple Flood Event Census Blockgroups",
+      subtitle=paste("Harris County, >1 event per capita")
+    ) %>% 
+    cols_label(
+      censusBlockGroupFips="BlkGrp",
+      Label="Label",
+      Pop_blk_grpE="Population",
+      Per_cap_incE="Income per capita"
+    ) %>% 
+    tab_footnote(
+      footnote="2020 census data"
+    )
+
+  
+
 #   Make plots for each block
 
-for (i in FreqFliers$censusBlockGroupFips){
+# for (i in FreqFliers$censusBlockGroupFips){
   
   Label <- Frequent$Label[1]
   
@@ -207,9 +231,29 @@ for (i in FreqFliers$censusBlockGroupFips){
       footnote="FEMA data combined with 2020 census"
     )
     
+  #   Plot flood inches distribution
   
+  Frequent %>% 
+    filter(censusBlockGroupFips %in% i) %>% 
+    ggplot(aes(x=waterDepth)) + 
+    geom_histogram() +
+    labs(
+      title=paste("Water Depths for Claims in Inches"),
+      subtitle=paste("Census Blkgrp", i, Label),
+      x="Inches of Water",
+      y="Number of Claims"
+    )
     
-}
+# Map of blkgrp
+  
+
+tmap::tmap_mode("view") # set mode to interactive plots
+tmap::tmap_options(basemaps="OpenStreetMap")
+
+tmap::tm_shape(FEMA_2 %>% filter(censusBlockGroupFips %in% i)) + 
+  tmap::tm_fill(col = "red", title = paste("Blkgrp", i, Label), alpha=0.2, style="pretty")+
+  tmap::tm_borders(lwd=0.1) 
+# }
 
 ```
 
