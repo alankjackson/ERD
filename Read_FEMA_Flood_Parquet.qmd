@@ -20,7 +20,16 @@ library(tidycensus)
 
 pq_path <- "/home/ajackson/Dropbox/Rprojects/ERD/Data/"
 
-
+#   Expand box by 20% to give a little extra room
+expand_box <- function(bbox, pct=0.2){
+  Dx <- (bbox[["xmax"]]-bbox[["xmin"]])*pct
+  Dy <- (bbox[["ymax"]]-bbox[["ymin"]])*pct
+  bbox["xmin"] <- bbox["xmin"] - Dx
+  bbox["xmax"] <- bbox["xmax"] + Dx
+  bbox["ymin"] <- bbox["ymin"] - Dy
+  bbox["ymax"] <- bbox["ymax"] + Dy
+  return(bbox)
+}
 ```
 
 ##        Set up connection to file and pull out Harris county
@@ -155,6 +164,7 @@ FreqFliers <- FEMA_2 %>%
   filter(Claims_percap>1) %>% 
   select(censusBlockGroupFips, Pop_blk_grpE, Per_cap_incE) %>% 
   sf::st_drop_geometry() %>% 
+   arrange(censusBlockGroupFips) %>% 
   mutate(Label=paste("Harris", LETTERS[row_number()]))
 
 Frequent <- Fema_clean %>% 
@@ -166,6 +176,7 @@ Frequent <- Fema_clean %>%
 FEMA_2 %>% 
   sf::st_drop_geometry() %>% 
   filter(censusBlockGroupFips %in% FreqFliers$censusBlockGroupFips) %>% 
+   arrange(censusBlockGroupFips) %>% 
   mutate(Label=paste("Harris", LETTERS[row_number()])) %>% 
   select(censusBlockGroupFips, Label, Pop_blk_grpE, Per_cap_incE) %>% 
   gt() %>%     
@@ -183,7 +194,27 @@ FEMA_2 %>%
       footnote="2020 census data"
     )
 
+box <- FEMA_2 %>%
+    sf::st_bbox() %>% expand_box(., 0.2)
   
+  Base_basemapR <- basemapR::base_map(box, basemap="mapnik", increase_zoom=2)
+  
+ FEMA_2 %>% 
+  filter(censusBlockGroupFips %in% FreqFliers$censusBlockGroupFips) %>% 
+   arrange(censusBlockGroupFips) %>% 
+  mutate(Label=paste("Harris", LETTERS[row_number()])) %>% 
+   sf::st_as_sf() %>% 
+    ggplot() +
+    Base_basemapR +
+   geom_sf(color="red")+
+    ggsflabel::geom_sf_label_repel(aes(label=paste(Label)),
+                                    size=2, max.overlaps=20, force=100) +
+    labs(title=paste("Census Blkgrps in Harris County with >1 FEMA Claim per capita"),
+         x="Longitude",
+         y="Latitude") +
+    coord_sf(xlim=c(box$xmin, box$xmax),c(box$ymin, box$ymax))
+  
+  # ggsave(paste0(output_path, "Cat_",i,"_slosh_model.jpg")) 
 
 #   Make plots for each block
 
