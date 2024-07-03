@@ -1,0 +1,370 @@
+---
+title: "Harris County Example"
+author: "Alan Jackson"
+format: pdf
+editor: source
+---
+
+##  Harris County Flood Vulnerability
+
+This is an example of a report based on FEMA data that can be generated for 
+every county that might be at flood risk - primarily those near the Gulf or 
+Atlantic coasts.
+
+The FEMA data covers claims from the period 1978 through April 2024.
+
+```{r}
+#| echo: false
+#| output: false
+#| warning: false
+#| error: false
+
+#   setup
+library(tidyverse)
+library(gt)
+library(tidycensus)
+
+
+pq_path <- "/home/ajackson/Dropbox/Rprojects/ERD/Data/"
+
+#   Expand box by 20% to give a little extra room
+expand_box <- function(bbox, pct=0.2){
+  Dx <- (bbox[["xmax"]]-bbox[["xmin"]])*pct
+  Dy <- (bbox[["ymax"]]-bbox[["ymin"]])*pct
+  bbox["xmin"] <- bbox["xmin"] - Dx
+  bbox["xmax"] <- bbox["xmax"] + Dx
+  bbox["ymin"] <- bbox["ymin"] - Dy
+  bbox["ymax"] <- bbox["ymax"] + Dy
+  return(bbox)
+}
+
+#   Read in the data
+
+FEMA <- arrow::open_dataset(paste0(pq_path,"FimaNfipClaims.parquet"))
+
+FEMA_Harris <- FEMA %>% 
+  filter(countyCode=="48201") %>% 
+  collect()
+
+#   Pluck out fields on interest
+
+Fema_clean <- FEMA_Harris %>% 
+  select(dateOfLoss, ratedFloodZone, occupancyType, amountPaidOnBuildingClaim,
+         yearOfLoss, buildingDamageAmount,  contentsDamageAmount, 
+         buildingPropertyValue, amountPaidOnContentsClaim,
+         amountPaidOnIncreasedCostOfComplianceClaim,
+         buildingReplacementCost, causeOfDamage, floodEvent, waterDepth,
+         floodZoneCurrent, censusTract, censusBlockGroupFips,
+         nfipCommunityName, eventDesignationNumber) %>% 
+  arrange(dateOfLoss)  
+
+#   Get block data for Harris county
+
+census_api_key("c458095036ca1037f97b9c7019b6a7ac2dbf90d4")
+
+#   All these by block group
+acs_vars_b <- c(Pop_blk_grp="B01001_001", # Total population by blk grp
+              Med_inc="B19013_001", # median household income, blk grp
+              Per_cap_inc="B19301_001", # Per capita income, blk grp
+              Aggreg_inc="B19025_001", # Aggregate household income, blk grp
+              Households="B11012_001", # Households, blk grp
+              Med_age="B01002_001") # median age, blk grp
+
+ACS_b <- get_acs(geography="block group",
+               variables=acs_vars_b,
+               year=2020,
+               state="TX",
+               county="201",
+               output="wide",
+               geometry=TRUE) 
+
+#   Create sums of claims data by blk grp
+
+Sum_per_blk <- FEMA_Harris %>% 
+    select(dateOfLoss, ratedFloodZone, occupancyType, amountPaidOnBuildingClaim,
+         yearOfLoss, buildingDamageAmount, buildingPropertyValue,
+         buildingReplacementCost, causeOfDamage, floodEvent, waterDepth,
+         floodZoneCurrent, censusTract, censusBlockGroupFips,
+         nfipCommunityName) %>% 
+  filter(occupancyType %in% c(1,2,3,11,12,13,14,15,16)) %>% 
+  mutate(Occupancy=case_when(
+              occupancyType==1 | occupancyType==11 | occupancyType==15 ~ "Own",
+              occupancyType==14 ~ "Mobile",
+              .default="Rent"
+  )) %>% 
+  group_by(censusBlockGroupFips, Occupancy) %>% 
+    summarise(Num_Claims=n(),
+              Num_dates=n_distinct(dateOfLoss)) %>% 
+  ungroup() %>% 
+  pivot_wider(names_from = Occupancy, values_from = c(Num_Claims, Num_dates),
+              values_fill=0) %>% 
+  mutate(Num_Claims=Num_Claims_Own+Num_Claims_Rent,
+         Num_dates=Num_dates_Own+Num_dates_Rent)
+
+#   Combine FEMA data with census data
+
+FEMA_2 <- inner_join(Sum_per_blk, ACS_b, by=join_by("censusBlockGroupFips"=="GEOID")) %>%
+  mutate(Claims_percap=Num_Claims/Pop_blk_grpE) %>% 
+  filter(Pop_blk_grpE>0) %>% 
+  mutate(AvgHouseIncome=Aggreg_incE/HouseholdsE) %>% 
+  sf::st_as_sf() %>% 
+  sf::st_make_valid()
+
+```
+
+
+
+```{r}
+#| echo: false
+#| warning: false
+#| error: false
+
+#   Summary page
+FreqFliers <- FEMA_2 %>% 
+  filter(Claims_percap>1) %>% 
+  select(censusBlockGroupFips, Pop_blk_grpE, Per_cap_incE,
+         HouseholdsE, AvgHouseIncome, Med_incE,
+         Num_Claims, Num_Claims_Own, Num_Claims_Rent) %>% 
+  sf::st_drop_geometry() %>% 
+  mutate(Flag=ifelse(is.na(Med_incE), '*', ' ')) %>% 
+  mutate(Med_incE=ifelse(is.na(Med_incE), AvgHouseIncome, Med_incE)) %>% 
+  mutate(Med_incE=paste(scales::label_currency()(Med_incE), Flag)) %>% 
+   arrange(censusBlockGroupFips) %>% 
+  mutate(Label=paste("Harris", LETTERS[row_number()]))
+
+Frequent <- Fema_clean %>% 
+  filter(censusBlockGroupFips %in% FreqFliers$censusBlockGroupFips) %>% 
+  left_join(FreqFliers, by="censusBlockGroupFips")
+
+#   Table and Plots of interesting blocks in county
+
+Summary_table <- FreqFliers %>% 
+   arrange(censusBlockGroupFips) %>% 
+  select(censusBlockGroupFips, Label, Pop_blk_grpE,
+         Num_Claims_Own, Num_Claims_Rent, HouseholdsE, Med_incE) %>% 
+         # Num_Claims_Own, Num_Claims_Rent, HouseholdsE, AvgHouseIncome) %>% 
+  gt() %>%     
+  gt::tab_header(
+      title="Multiple Flood Claims Census Blockgroups",
+      subtitle=paste("Harris County, >1 claim per capita")
+    ) %>% 
+    cols_label(
+      censusBlockGroupFips="BlkGrp",
+      Label="Label",
+      Pop_blk_grpE="Pop",
+      HouseholdsE="Number",
+      # Num_Claims_Own="Owner Claims",
+      # Num_Claims_Rent="Renter Claims",
+      Num_Claims_Own="Owner",
+      Num_Claims_Rent="Renter",
+      Med_incE="Med Income"
+      # AvgHouseIncome="Income"
+    ) %>% 
+    # fmt_currency(Med_incE, decimals=0) %>% 
+    # fmt_currency(AvgHouseIncome, decimals=0) %>% 
+    tab_spanner(
+      label="Claims",
+      columns=c(Num_Claims_Own, Num_Claims_Rent)
+    ) %>% 
+    tab_spanner(
+      label="Households",
+      columns=c(HouseholdsE, Med_incE)
+      # columns=c(HouseholdsE, AvgHouseIncome)
+    ) %>% 
+    tab_footnote(
+      footnote=md("*2020 census data*")
+    ) %>% 
+    tab_footnote(
+      footnote=md("*\\* Average Income*")
+    )
+
+Summary_table %>% tab_options(., container.width=800, container.height=800) %>% 
+  gtsave("tmp2.png") 
+
+#   Index map of frequent flier blkgrps
+
+box <- FEMA_2 %>%
+    sf::st_bbox() %>% expand_box(., 0.2)
+  
+  Base_basemapR <- basemapR::base_map(box, basemap="mapnik", increase_zoom=2)
+  
+ Index_map <-
+   FEMA_2 %>% 
+   inner_join(., FreqFliers, by="censusBlockGroupFips") %>% 
+   arrange(censusBlockGroupFips) %>% 
+   sf::st_as_sf() %>% 
+    ggplot() +
+    Base_basemapR +
+   geom_sf(color="red")+
+    # ggsflabel::geom_sf_label_repel(aes(label=paste(Label)),
+    #                                 size=2, max.overlaps=20, force=100) +
+    # geom_sf_label_repel(aes(label = paste(Label)),
+    #                     force = 100, nudge_x = -2, seed = 10) +
+   ggrepel::geom_label_repel(
+    aes(label = paste(Label), geometry = geometry),
+    stat = "sf_coordinates",
+    min.segment.length = 0.0,
+    size=2,
+    force = 10
+  ) +
+    labs(title=paste("Harris County"),
+         subtitle="Census Blkgrps with >1 FEMA Claim per capita",
+         x="Longitude",
+         y="Latitude") +
+    scale_x_continuous(breaks = seq(-96.2, -94.8, by = 0.4)) +
+    theme(title =element_text(size=8),
+         subtitle =element_text(size=6)
+      # plot.title.size=5,
+          # plot.subtitle.size=3
+          ) +
+    coord_sf(xlim=c(box$xmin, box$xmax),c(box$ymin, box$ymax)) 
+   
+   ggsave("tmp1.png", width=3.5, height=3, units="in")
+ 
+```
+::: {#fig-County layout-ncol=2}
+
+![Index Map](tmp1.png){#fig-map}
+
+![Summary](tmp2.png){#fig-summary}
+
+Harris County statistics
+:::
+
+
+```{r}
+#| echo: false
+#| warning: false
+#| error: false
+
+#   Loop through frequent fliers and plot map, events per year, flood inches,
+#   and table of year, claims, event name, amount paid, damage amount
+
+# for (i in FreqFliers$censusBlockGroupFips){
+
+i = FreqFliers$censusBlockGroupFips[1]
+  Label <- Frequent$Label[1]
+  
+  Claims <- Frequent %>% 
+    filter(censusBlockGroupFips %in% i) %>% 
+    group_by(yearOfLoss) %>% 
+      summarise(Claims=n(),
+                Payout=sum(amountPaidOnBuildingClaim + 
+                           amountPaidOnContentsClaim, na.rm=TRUE),
+                Damage=sum(buildingDamageAmount + 
+                           contentsDamageAmount, na.rm=TRUE))
+  
+  #   Flood events per year barchart
+  
+  EvtsPerYr <- 
+  Claims %>% ggplot(aes(x=yearOfLoss, y=Claims)) +
+    geom_bar(stat="identity") +
+    labs(
+      title=paste("Flood Events by Year"),
+      subtitle=paste("Census Blkgrp", i, Label),
+      x="Year of Loss",
+      y="Number of Claims"
+    )
+   ggsave("EvntsPerYr.png", width=3.5, height=3, units="in")
+  
+  #   Table of Claims and event names and year, damages and payout
+  
+  MyTable <- Frequent %>% 
+    filter(censusBlockGroupFips %in% i) %>% 
+    group_by(floodEvent, yearOfLoss) %>% 
+      summarise(Claims=n(),
+                Payout=sum(amountPaidOnBuildingClaim + 
+                           amountPaidOnContentsClaim, na.rm=TRUE),
+                Damage=sum(buildingDamageAmount + 
+                           contentsDamageAmount, na.rm=TRUE)) %>% 
+    mutate(floodEvent=ifelse(is.na(floodEvent), "No Name", floodEvent))
+  
+  MyTable <- 
+  MyTable %>% 
+    arrange(yearOfLoss) %>% 
+    relocate(yearOfLoss, floodEvent, Claims, Damage, Payout) %>% 
+    ungroup() %>% 
+    filter(Claims>9) %>% #    only keep significant events
+    gt() %>% 
+    gt::tab_header(
+      title="Large Flood Events ( >9 claims)",
+      subtitle=paste("Census Blkgrp", i, Label)
+    ) %>% 
+    cols_label(
+      yearOfLoss="Year",
+      floodEvent="Event Name",
+      Claims="Num of Claims",
+      Damage="Damages",
+      Payout="Amt Paid"
+    ) %>% 
+    fmt_currency(Damage, decimals=0) %>%
+    fmt_currency(Payout, decimals=0) %>%
+    tab_footnote(
+      footnote=md("*FEMA data*")
+    )
+
+MyTable %>% tab_options(., container.width=800, container.height=800) %>% 
+  gtsave("Table.png") 
+    
+  #   Plot flood inches distribution
+  
+  FloodInches <- Frequent %>% 
+    filter(censusBlockGroupFips %in% i) %>% 
+    filter(waterDepth>0) %>% 
+    ggplot(aes(x=waterDepth)) + 
+    geom_histogram() +
+    labs(
+      title=paste("Water Depths for Claims in Inches"),
+      subtitle=paste("Census Blkgrp", i, Label),
+      x="Inches of Water",
+      y="Number of Claims"
+    )
+   ggsave("FloodInches.png", width=3.5, height=3, units="in")
+    
+#    Map of blkgrp
+
+TempMap <- FEMA_2 %>% filter(censusBlockGroupFips %in% i)
+
+box <- TempMap %>%
+    sf::st_bbox() %>% expand_box(., 0.2)
+  
+  Base_basemapR <- basemapR::base_map(box, basemap="mapnik", increase_zoom=2)
+  
+ BlkMap <-
+   TempMap %>% 
+   # inner_join(., FreqFliers, by="censusBlockGroupFips") %>% 
+   # arrange(censusBlockGroupFips) %>% 
+   sf::st_as_sf() %>% 
+    ggplot() +
+    Base_basemapR +
+   geom_sf(color="red", fill="blue", alpha=0.2)+
+    # ggsflabel::geom_sf_label_repel(aes(label=paste(Label)),
+    #                                 size=2, max.overlaps=20, force=100) +
+    # geom_sf_label_repel(aes(label = paste(Label)),
+    #                     force = 100, nudge_x = -2, seed = 10) +
+    labs(title=Label,
+         subtitle=paste("Blkgrp", TempMap$censusBlockGroupFips),
+         x="Longitude",
+         y="Latitude") +
+    # scale_x_continuous(breaks = seq(-96.2, -94.8, by = 0.4)) +
+    theme(title =element_text(size=8),
+         subtitle =element_text(size=6)
+      # plot.title.size=5,
+          # plot.subtitle.size=3
+          ) +
+    coord_sf(xlim=c(box$xmin, box$xmax),c(box$ymin, box$ymax)) 
+   
+   ggsave("BlkMap.png", width=3.5, height=3, units="in")
+
+#| layout-ncol: 2
+knitr::include_graphics("BlkMap.png")
+knitr::include_graphics("Table.png")
+
+
+
+# }
+```
+
+
+
+
