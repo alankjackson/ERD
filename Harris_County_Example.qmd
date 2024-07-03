@@ -13,6 +13,9 @@ Atlantic coasts.
 
 The FEMA data covers claims from the period 1978 through April 2024.
 
+Note that sometimes the census data hides the median income, so there I have 
+substituted the average household income - which may be biased high. 
+
 ```{r}
 #| echo: false
 #| output: false
@@ -243,7 +246,7 @@ Harris County statistics
 # for (i in FreqFliers$censusBlockGroupFips){
 
 i = FreqFliers$censusBlockGroupFips[1]
-  Label <- Frequent$Label[1]
+  Label <- FreqFliers$Label[1]
   
   Claims <- Frequent %>% 
     filter(censusBlockGroupFips %in% i) %>% 
@@ -264,8 +267,11 @@ i = FreqFliers$censusBlockGroupFips[1]
       subtitle=paste("Census Blkgrp", i, Label),
       x="Year of Loss",
       y="Number of Claims"
-    )
-   ggsave("EvntsPerYr.png", width=3.5, height=3, units="in")
+    )+
+    theme(title =element_text(size=8),
+         subtitle =element_text(size=6))
+
+   ggsave("EventsPerYr.png", width=3.5, height=3, units="in")
   
   #   Table of Claims and event names and year, damages and payout
   
@@ -300,10 +306,14 @@ i = FreqFliers$censusBlockGroupFips[1]
     fmt_currency(Damage, decimals=0) %>%
     fmt_currency(Payout, decimals=0) %>%
     tab_footnote(
+      footnote=md("*Tropical Storm Allison's name was re-used*")
+    ) %>% 
+    tab_footnote(
       footnote=md("*FEMA data*")
     )
 
-MyTable %>% tab_options(., container.width=800, container.height=800) %>% 
+# MyTable %>% tab_options(., container.width=800, container.height=800) %>% 
+MyTable %>% 
   gtsave("Table.png") 
     
   #   Plot flood inches distribution
@@ -318,7 +328,10 @@ MyTable %>% tab_options(., container.width=800, container.height=800) %>%
       subtitle=paste("Census Blkgrp", i, Label),
       x="Inches of Water",
       y="Number of Claims"
-    )
+    )+
+    theme(title =element_text(size=8),
+         subtitle =element_text(size=6))
+
    ggsave("FloodInches.png", width=3.5, height=3, units="in")
     
 #    Map of blkgrp
@@ -354,15 +367,54 @@ box <- TempMap %>%
           ) +
     coord_sf(xlim=c(box$xmin, box$xmax),c(box$ymin, box$ymax)) 
    
-   ggsave("BlkMap.png", width=3.5, height=3, units="in")
+   ggsave("BlkMap.png", width=7, units="in")
 
-#| layout-ncol: 2
-knitr::include_graphics("BlkMap.png")
-knitr::include_graphics("Table.png")
+#   Build dataframe of plots
 
+df <- dplyr::tribble(~label, ~map, ~table, ~floodbar, ~yearbar,
+              "Harris A", "BlkMap.png", "Table.png", 
+              "FloodInches.png", "EventsPerYr.png")
+
+# #| echo = FALSE, results = "asis"
+# cat("\n\n\\pagebreak\n")
+# cat("##Plots From Harris 1")
+# #| layout-ncol: 2
+# #| fig-cap:
+# #| - "Map of Block Group"
+# #| - "Significant Flood Events"
+# knitr::include_graphics("BlkMap.png")
+# knitr::include_graphics("Table.png")
 
 
 # }
+```
+
+
+
+
+```{r}
+#| echo: false
+#| warning: false
+#| error: false
+#| output: asis
+res <- pmap_chr(df, \(label, map, table, floodbar, yearbar) {
+  knitr::knit_child(text = c(
+    "\\newpage",
+    "## `r label`",
+    "::: {#fig-Map layout-ncol=1}",
+    "![Map](`r map`){#fig-map}",
+    ":::",
+    "::: {#fig-Table layout-ncol=1}",
+    "![Summary](Table.png){#fig-summary}",
+    ":::",
+    "::: {#fig-BarCharts layout-ncol=2}",
+    # "![Inches water](FloodInches.png){#fig-flood}",
+    "![Events per Year](EventsPerYr.png){#fig-evnts}",
+    "This is label for the plots",
+    ":::",
+    ""), envir = environment(), quiet = TRUE)
+})
+cat(res, sep = '\n')
 ```
 
 
