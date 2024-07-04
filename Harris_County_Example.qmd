@@ -271,7 +271,7 @@ i = FreqFliers$censusBlockGroupFips[1]
     theme(title =element_text(size=8),
          subtitle =element_text(size=6))
 
-   ggsave("EventsPerYr.png", width=3.5, height=3, units="in")
+   ggsave("EventsPerYr.png", width=3.2, height=3, units="in")
   
   #   Table of Claims and event names and year, damages and payout
   
@@ -332,7 +332,7 @@ MyTable %>%
     theme(title =element_text(size=8),
          subtitle =element_text(size=6))
 
-   ggsave("FloodInches.png", width=3.5, height=3, units="in")
+   ggsave("FloodInches.png", width=3.2, height=3, units="in")
     
 #    Map of blkgrp
 
@@ -375,21 +375,9 @@ df <- dplyr::tribble(~label, ~map, ~table, ~floodbar, ~yearbar,
               "Harris A", "BlkMap.png", "Table.png", 
               "FloodInches.png", "EventsPerYr.png")
 
-# #| echo = FALSE, results = "asis"
-# cat("\n\n\\pagebreak\n")
-# cat("##Plots From Harris 1")
-# #| layout-ncol: 2
-# #| fig-cap:
-# #| - "Map of Block Group"
-# #| - "Significant Flood Events"
-# knitr::include_graphics("BlkMap.png")
-# knitr::include_graphics("Table.png")
-
 
 # }
 ```
-
-
 
 
 ```{r}
@@ -399,18 +387,23 @@ df <- dplyr::tribble(~label, ~map, ~table, ~floodbar, ~yearbar,
 #| output: asis
 res <- pmap_chr(df, \(label, map, table, floodbar, yearbar) {
   knitr::knit_child(text = c(
-    "\\newpage",
-    "## `r label`",
-    "::: {#fig-Map layout-ncol=1}",
-    "![Map](`r map`){#fig-map}",
+    # "\\newpage",
+    # "## `r label`",
+    # "::: {layout-ncol=1}",
+    "::: {layout='[[1,1], [1]]'}",
+    " ",
+    # ":::",
+    # "::: {layout-ncol=2}",
+    " ",
+    "![Inches water](`r floodbar`)",
+    " ",
+    "![Events per Year](`r yearbar`)",
+    " ",
+    "![Map](`r map`)",
     ":::",
-    "::: {#fig-Table layout-ncol=1}",
-    "![Summary](Table.png){#fig-summary}",
-    ":::",
-    "::: {#fig-BarCharts layout-ncol=2}",
-    # "![Inches water](FloodInches.png){#fig-flood}",
-    "![Events per Year](EventsPerYr.png){#fig-evnts}",
-    "This is label for the plots",
+    " ",
+    "::: {layout-ncol=1}",
+    "![Summary](`r table`)",
     ":::",
     ""), envir = environment(), quiet = TRUE)
 })
