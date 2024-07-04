@@ -243,10 +243,14 @@ Harris County statistics
 #   Loop through frequent fliers and plot map, events per year, flood inches,
 #   and table of year, claims, event name, amount paid, damage amount
 
-# for (i in FreqFliers$censusBlockGroupFips){
+df <-  NULL
+j <-  0
 
-i = FreqFliers$censusBlockGroupFips[1]
-  Label <- FreqFliers$Label[1]
+for (i in FreqFliers$censusBlockGroupFips){
+  j = j + 1
+
+# i = FreqFliers$censusBlockGroupFips[1]
+  Label <- FreqFliers$Label[j]
   
   Claims <- Frequent %>% 
     filter(censusBlockGroupFips %in% i) %>% 
@@ -271,7 +275,7 @@ i = FreqFliers$censusBlockGroupFips[1]
     theme(title =element_text(size=8),
          subtitle =element_text(size=6))
 
-   ggsave("EventsPerYr.png", width=3.2, height=3, units="in")
+   ggsave(paste0("EventsPerYr_",j,".png"), width=3.2, height=3, units="in")
   
   #   Table of Claims and event names and year, damages and payout
   
@@ -314,7 +318,7 @@ i = FreqFliers$censusBlockGroupFips[1]
 
 # MyTable %>% tab_options(., container.width=800, container.height=800) %>% 
 MyTable %>% 
-  gtsave("Table.png") 
+  gtsave(paste0("Table_", j,".png")) 
     
   #   Plot flood inches distribution
   
@@ -332,7 +336,7 @@ MyTable %>%
     theme(title =element_text(size=8),
          subtitle =element_text(size=6))
 
-   ggsave("FloodInches.png", width=3.2, height=3, units="in")
+   ggsave(paste0("FloodInches_", j,".png"), width=3.2, height=3, units="in")
     
 #    Map of blkgrp
 
@@ -367,16 +371,19 @@ box <- TempMap %>%
           ) +
     coord_sf(xlim=c(box$xmin, box$xmax),c(box$ymin, box$ymax)) 
    
-   ggsave("BlkMap.png", width=7, units="in")
+   # ggsave(paste0("BlkMap_", j,".png"), width=7, units="in")
+   ggsave(paste0("BlkMap_", j,".png"))
 
 #   Build dataframe of plots
 
-df <- dplyr::tribble(~label, ~map, ~table, ~floodbar, ~yearbar,
-              "Harris A", "BlkMap.png", "Table.png", 
-              "FloodInches.png", "EventsPerYr.png")
+  df <-  rbind(df, dplyr::tribble(~label, ~map, ~table, ~floodbar, ~yearbar,
+              Label, paste0("BlkMap_", j, ".png"), 
+              paste0("Table_", j, ".png"), 
+              paste0("FloodInches_", j, ".png"),
+              paste0("EventsPerYr_", j, ".png"))) 
 
 
-# }
+}
 ```
 
 
