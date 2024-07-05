@@ -11,6 +11,16 @@ editor: source
 ```{r}
 # setup
 
+library(tidyverse)
+library(gt)
+library(tidycensus)
+
+path <- "/home/ajackson/Dropbox/Rprojects/TexasDioceseCreationCare/Data/"
+output_path <- "/home/ajackson/Dropbox/projects/CeationCareTaskforce/FirstStreetFlood/"
+
+#   Some useful data
+
+Census <- readRDS(paste0(path, "Census_data_for_Texas_by_tract.rds"))
 
 ```
 
