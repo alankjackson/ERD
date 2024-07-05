@@ -324,6 +324,39 @@ tmap::tm_shape(FEMA_2 %>% filter(censusBlockGroupFips %in% i)) +
 
 ```
 
+```{r}
+#     Misc stuff
+
+Fema_clean %>% 
+  mutate(amountPaidOnBuildingClaim=replace_na(amountPaidOnBuildingClaim, 0),
+         amountPaidOnContentsClaim=replace_na(amountPaidOnContentsClaim, 0),
+         buildingDamageAmount=replace_na(buildingDamageAmount, 0),
+         contentsDamageAmount=replace_na(contentsDamageAmount, 0)) %>% 
+  mutate(PctPaid=100*(amountPaidOnBuildingClaim + amountPaidOnContentsClaim)/
+                 (buildingDamageAmount + contentsDamageAmount)) %>% 
+  select(PctPaid) %>% 
+  filter(PctPaid<200) %>% 
+  filter(!is.nan(PctPaid)) %>% 
+  ggplot(aes(x=PctPaid))+
+  geom_histogram(binwidth=10)
+
+
+Fema_clean %>% 
+  mutate(amountPaidOnBuildingClaim=replace_na(amountPaidOnBuildingClaim, 0),
+         amountPaidOnContentsClaim=replace_na(amountPaidOnContentsClaim, 0),
+         buildingDamageAmount=replace_na(buildingDamageAmount, 0),
+         contentsDamageAmount=replace_na(contentsDamageAmount, 0)) %>% 
+  mutate(PctPaid=(amountPaidOnBuildingClaim + amountPaidOnContentsClaim)-
+                 (buildingDamageAmount + contentsDamageAmount)) %>% 
+  select(PctPaid) %>% 
+  filter(!is.nan(PctPaid)) %>% 
+  filter(between(PctPaid, -2000, 2000)) %>% 
+  ggplot(aes(x=PctPaid))+
+  geom_histogram()+
+  labs(x="Paid - Damages")
+
+
+```
 
 
 
