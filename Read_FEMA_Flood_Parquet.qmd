@@ -322,6 +322,18 @@ tmap::tm_shape(FEMA_2 %>% filter(censusBlockGroupFips %in% i)) +
   tmap::tm_borders(lwd=0.1) 
 # }
 
+#     Map of tracts
+
+Fema_clean %>% 
+  group_by(censusBlockGroupFips) %>% 
+    summarise(Num_Claims=n(),
+              Num_dates=n_distinct(dateOfLoss)) %>% 
+  ungroup() #%>% 
+  pivot_wider(names_from = Occupancy, values_from = c(Num_Claims, Num_dates),
+              values_fill=0) %>% 
+  mutate(Num_Claims=Num_Claims_Own+Num_Claims_Rent,
+         Num_dates=Num_dates_Own+Num_dates_Rent)
+
 ```
 
 ```{r}
@@ -358,5 +370,61 @@ Fema_clean %>%
 
 ```
 
+##        FEMA Ike payouts
+
+```{r}
+
+Ike_claims <- 
+Fema_clean %>% 
+  filter(floodEvent=="Hurricane Ike") %>% 
+  group_by(censusBlockGroupFips) %>% 
+    summarise(Num_Claims=n(),
+              Num_dates=n_distinct(dateOfLoss)) %>% 
+  ungroup() %>% 
+  inner_join(., ACS_b, by=join_by("censusBlockGroupFips"=="GEOID")) %>%
+  mutate(Claims_percap=Num_Claims/Pop_blk_grpE) %>% 
+  filter(Pop_blk_grpE>0) %>% 
+  filter(Num_Claims>100) %>% 
+  arrange(-Claims_percap) %>% 
+  head(10) %>% 
+  mutate(AvgHouseIncome=Aggreg_incE/HouseholdsE) %>% 
+  mutate(Label=paste(Num_Claims, "Claims")) %>% 
+  sf::st_as_sf() %>% 
+  sf::st_make_valid()
+
+#   make a diagnostic map
+
+tmap::tmap_options(basemaps="OpenStreetMap")
+
+tmap::tmap_mode("view") # set mode to interactive plots
+
+tmap::tm_shape(Ike_claims) + 
+  tmap::tm_fill(col = "red", title = "Ike Claims per capita", alpha=0.3, style="pretty")+
+  tmap::tm_borders(lwd=0.5, col="black") +
+  tmap::tm_text("Label", col="black") +
+  tmap::tm_layout(title="Top Claims by Percent from Ike")
+
+
+  Ike_claims %>% 
+    select(Num_Claims,Claims_percap, Med_incE, HouseholdsE) %>% 
+    relocate(Num_Claims,Claims_percap, Med_incE, HouseholdsE) %>% 
+    sf::st_drop_geometry() %>% 
+    gt() %>% 
+    gt::tab_header(
+      title="Top Block Groups for Ike claims",
+      subtitle="Top 10 by Claims Per Capita"
+    ) %>% 
+    cols_label(
+      Num_Claims="Number of Claims",
+      Claims_percap="Claims per Cap",
+      Med_incE="Median Income",
+      HouseholdsE="Num Households"
+    ) %>% 
+    fmt_number(Claims_percap, decimals=2) %>% 
+    fmt_currency(Med_incE, decimals=0) %>% 
+    tab_footnote(
+      footnote="FEMA data combined with 2020 census"
+    )
+```
 
 
