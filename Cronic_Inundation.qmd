@@ -8,6 +8,7 @@ editor: source
 
 ```{r}
 #| context: setup
+### #| include: false
 
 library(tidyverse)
 library(stringr)
@@ -18,7 +19,7 @@ googlecrs <- "EPSG:4326"
 path <- "/home/ajackson/Dropbox/Rprojects/TexasDioceseCreationCare/Data/"
 Curated_path <- "/home/ajackson/Dropbox/Rprojects/Curated_Data_Files/"
 
-df <- readRDS(paste0(Curated_path, "SeaLevel/UCS_data.rds"))
+df <- readRDS(paste0(Curated_path, "SeaLevel/UCS_sfdata.rds"))
 
 Scenarios <- c("2030 High", "2045 High", "2060 High", 
                "2080 High", "2100 High", "2035 Intermediate", 
@@ -31,16 +32,54 @@ Scenarios <- c("2030 High", "2045 High", "2060 High",
 
 ```{r}
 
-
-
-
 sliderInput('Pct_poverty', '% in Poverty', 
             min=0, max=100,
             value=10, 
             step=5, round=0)
 br()
-checkboxInput('jitter', 'Jitter')
-checkboxInput('smooth', 'Smooth')
+
+selectInput('Scenario', 'Scenario', Scenarios)
+
+```
+
+# Plot
+
+```{r}
+plotOutput('plot')
+```
+
+# Data
+
+```{r}
+tableOutput('data')
+```
+
+```{r}
+#| context: server
+
+dataset <- reactive({
+  df %>% filter(sheet==input$Scenario) %>% 
+    filter(Poverty_pct>=input$Pct_poverty/100) %>% 
+    select(Zip, Homes_Risk, Homes_ratio, Poverty_pct) %>% 
+    sf::st_as_sf()
+})
+ 
+output$plot <- renderTmap({
+  
+  tmap::tmap_options(basemaps="OpenStreetMap")
+  tmap_mode("view")
+
+  dataset() %>%  tm_shape() +
+  tm_polygons("Poverty_pct", alpha=0.5, popup.vars=c("Zip", 
+                                                     "State",
+                                                     "Homes_Risk",
+                                                     "Homes_ratio"))
+  
+})
+
+output$data <- renderTable({
+  dataset() %>% sf::st_drop_geometry()
+})
 ```
 
 
