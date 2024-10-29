@@ -1,0 +1,46 @@
+---
+title: "Chronic Inundation Dashboard"
+author: "Alan Jackson"
+format: dashboard
+server: shiny
+editor: source
+---
+
+```{r}
+#| context: setup
+
+library(tidyverse)
+library(stringr)
+library(tmap)
+
+googlecrs <- "EPSG:4326"
+
+path <- "/home/ajackson/Dropbox/Rprojects/TexasDioceseCreationCare/Data/"
+Curated_path <- "/home/ajackson/Dropbox/Rprojects/Curated_Data_Files/"
+
+df <- readRDS(paste0(Curated_path, "SeaLevel/UCS_data.rds"))
+
+Scenarios <- c("2030 High", "2045 High", "2060 High", 
+               "2080 High", "2100 High", "2035 Intermediate", 
+               "2060 Intermediate", "2080 Intermediate", 
+               "2100 Intermediate", "2060 Low", "2100 Low" )
+
+```
+
+# {.sidebar}
+
+```{r}
+
+
+
+
+sliderInput('Pct_poverty', '% in Poverty', 
+            min=0, max=100,
+            value=10, 
+            step=5, round=0)
+br()
+checkboxInput('jitter', 'Jitter')
+checkboxInput('smooth', 'Smooth')
+```
+
+
