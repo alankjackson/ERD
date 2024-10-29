@@ -21,7 +21,7 @@ googlecrs <- "EPSG:4326"
 
 #   Directory where data is stored
 
-DataLocation <- "https://www.ajackson.org/Permits/data/ERD/"
+DataLocation <- "https://www.ajackson.org/ERD/"
 
 z <- url(paste0(DataLocation, "UCS_sfdata.rds"), method="libcurl")
 df <- readRDS(z)
@@ -41,7 +41,7 @@ Scenarios <- c("2030 High", "2045 High", "2060 High",
 ```{r}
 
 sliderInput('Pct_poverty', '% in Poverty', 
-            min=0, max=100,
+            min=5, max=100,
             value=10, 
             step=5, round=0)
 br()
