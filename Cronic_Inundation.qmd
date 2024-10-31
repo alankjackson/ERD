@@ -17,7 +17,7 @@ library(tmap)
 googlecrs <- "EPSG:4326"
 
 # path <- "/home/ajackson/Dropbox/Rprojects/TexasDioceseCreationCare/Data/"
-# Curated_path <- "/home/ajackson/Dropbox/Rprojects/Curated_Data_Files/"
+Curated_path <- "/home/ajackson/Dropbox/Rprojects/Curated_Data_Files/"
 
 #   Directory where data is stored
 
@@ -50,6 +50,18 @@ selectInput('Scenario', 'Scenario', Scenarios)
 
 ```
 
+Data from Union of Concerned Scientists dataset plus the 2020 ACS 
+census data.
+
+Chronic Inundation is defined as 26 or more days per year where the streets
+flood during high tide. 
+
+Scenarios refer to Low, Intermediate, or High models for sea-level rise.
+The appended year refers to the year that level of inundation is expected to
+occur.
+
+Note that the visible data is also shown as a table in the Data tab.
+
 # Plot
 
 ```{r}
@@ -59,7 +71,8 @@ tmapOutput('plot')
 # Data
 
 ```{r}
-tableOutput('data')
+# tableOutput('data')
+DT::dataTableOutput('data')
 ```
 
 ```{r}
@@ -67,7 +80,7 @@ tableOutput('data')
 
 dataset <- reactive({
   df %>% filter(sheet==input$Scenario) %>% 
-    filter(Poverty_pct>=input$Pct_poverty/100) %>% 
+    filter(Poverty_pct>=input$Pct_poverty) %>% 
     select(Zip, State, Homes_Risk, Homes_ratio, Poverty_pct) %>% 
     sf::st_as_sf()
 })
@@ -88,9 +101,12 @@ output$plot <- renderTmap({
   
 })
 
-output$data <- renderTable({
-  dataset() %>% sf::st_drop_geometry()
-})
+# output$data <- renderTable({
+output$data <- DT::renderDataTable({
+  dataset() %>% sf::st_drop_geometry()} ,
+  colnames=c("Zip", "State", "Homes at Risk", 
+             "% Homes at Risk", "% Poverty")
+)
 ```
 
 
