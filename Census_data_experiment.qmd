@@ -1,0 +1,75 @@
+---
+title: "Census data experiment"
+author: "Alan Jackson"
+format: html
+editor: source
+---
+
+##      I need a place to play with census data
+
+```{r}
+
+#   setup
+library(tidyverse)
+library(gt)
+library(tidycensus)
+
+
+census_api_key("c458095036ca1037f97b9c7019b6a7ac2dbf90d4",
+               install=TRUE)
+
+#   Look at variables
+
+v20 <- load_variables(2020, "acs5", cache = TRUE)
+
+#   Get block data for Harris county
+#   All these by block group
+acs_vars_b <- c(Pop_blk_grp="B01001_001", # Total population by blk grp
+              Med_inc="B19013_001", # median household income, blk grp
+              Per_cap_inc="B19301_001", # Per capita income, blk grp
+              Aggreg_inc="B19025_001", # Aggregate household income, blk grp
+              Households="B11012_001", # Households, blk grp
+              Med_age="B01002_001") # median age, blk grp
+
+ACS_b <- get_acs(geography="block group",
+               variables=acs_vars_b,
+               year=2020,
+               state="TX",
+               county="201",
+               output="wide",
+               geometry=FALSE) 
+
+acs_vars_x <- c(Pop_blk_grp="B01001_001", # Total population by blk grp
+              Med_inc="B19013_001", # median household income, blk grp
+              Per_cap_inc="B19301_001", # Per capita income, blk grp
+              Fam="B17010_001", # Families, blk grp
+              Fam_in_poverty="B17010_002", # Families in poverty, blk grp
+              Aggreg_inc="B19025_001", # Aggregate household income, blk grp
+              Households="B11012_001", # Households, blk grp
+              Med_age="B01002_001") # median age, blk grp
+ACS_x <- get_acs(geography="block group",
+               variables=acs_vars_x,
+               year=2020,
+               state="TX",
+               county="201",
+               output="wide",
+               geometry=FALSE) 
+
+acs_vars_t <- c(Pop_tract="B17001_001", #   total population per tract
+                Pop_poverty="B17001_002", # total population in poverty
+                Household_SNAP="B22003_002", # households receiving foodstamps/SNAP
+                Family_tot="B17006_001", #
+                Family_poverty="B17006_002"
+)
+ACS_t <- get_acs(geography="tract",
+               variables=acs_vars_t,
+               year=2020,
+               state="TX",
+               county="201",
+               output="wide",
+               geometry=FALSE) 
+
+
+
+```
+
