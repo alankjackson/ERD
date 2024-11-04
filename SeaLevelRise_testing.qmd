@@ -1,0 +1,75 @@
+---
+title: "SeaLevelRise_testing"
+author: "Alan Jackson"
+format: html
+editor: source
+---
+
+##        NOAA data
+
+download from https://coast.noaa.gov/slrdata/Depth_Rasters/index.html
+
+
+
+```{r setup}
+
+library(tidyverse)
+library(tidycensus)
+library(stringr)
+library(tmap)
+
+googlecrs <- "EPSG:4326"
+
+path <- "/home/ajackson/Dropbox/Rprojects/ERD/SeaLevel/"
+Curated_path <- "/home/ajackson/Dropbox/Rprojects/Curated_Data_Files/"
+mirror <- "/home/ajackson/Dropbox/mirrors/ajackson/ERD/"
+
+infile <- paste0(path, "LA_Delta_slr_depth_0_5ft.tif")
+
+#   File is too big - blows up PC memory
+
+df_tif <- terra::aggregate(terra::rast(infile), 
+                         fact=5, fun="median", na.rm=TRUE)
+                         # fact=5, fun="max", na.rm=TRUE)
+# > df_tif                                  
+# class       : SpatRaster 
+# dimensions  : 10085, 14341, 1  (nrow, ncol, nlyr)
+# resolution  : 0.0001347473, 0.0001347473  (x, y)
+# extent      : -90.68977, -88.75735, 28.85413, 30.21306  (xmin, xmax, ymin, ymax)
+# coord. ref. : lon/lat NAD83 (EPSG:4269) 
+# source(s)   : memory
+# name        :       Band_1 
+# min value   : 3.576279e-07 
+# max value   : 9.964870e+01 
+
+# df_tif <- terra::rast(paste0(path, "LA_Delta_slr_depth_0_5ft.tif")) 
+
+#   Get rid of flags
+df_tif2 <- terra::ifel(df_tif > 9, NA, df_tif)
+```
+
+
+##        Make a map
+
+```{r}
+
+tmap::tmap_options(basemaps="OpenStreetMap")
+
+tmap::tmap_mode("view") # set mode to interactive plots
+
+tmap::tm_shape(df_tif2) + 
+    #tmap::tm_sf(col="ConvoColor", alpha=0.3) +
+  # tmap::tm_fill(title = "Threat", alpha=0.3, style="pretty") +
+  tmap::tm_raster(alpha=0.3,
+                  palette = "Blues",
+                  colorNA=NULL,
+                  title = "0.5 feet sea level rise")
+                  # palette = "-RdYlGn")
+
+```
+
+
+
+
+
+
