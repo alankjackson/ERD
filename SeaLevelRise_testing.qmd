@@ -19,6 +19,7 @@ library(stringr)
 library(tmap)
 
 googlecrs <- "EPSG:4326"
+NOAAcrs <- "EPSG:4269"
 
 path <- "/home/ajackson/Dropbox/Rprojects/ERD/SeaLevel/"
 Curated_path <- "/home/ajackson/Dropbox/Rprojects/Curated_Data_Files/"
@@ -46,6 +47,86 @@ df_tif <- terra::aggregate(terra::rast(infile),
 
 #   Get rid of flags
 df_tif2 <- terra::ifel(df_tif > 9, NA, df_tif)
+
+summary <- terra::summary(df_tif2)
+
+extent <- terra::ext(df_tif2)
+
+```
+
+##        Intersect grid with census block polygons
+
+Note: the grids are in EPSG:4269
+Census polygons are NAD83, EPSG:4269
+
+```{r}
+
+# Get blocks for Louisiana
+
+Blocks <- get_decennial(geography="block",
+                        variables="P1_001N",
+                        sumfile="dhc",
+                        year=2020,
+                        state="LA",
+                        # county="201",
+                        geometry=TRUE,
+                        output="wide") %>% 
+  rowid_to_column("ID")
+
+val_by_block <- terra::extract(df_tif2, 
+                               Blocks,
+                               exact=TRUE)
+
+val_by_block2 <- exactextractr::exact_extract(
+                     x=df_tif2,
+                     y=Blocks,
+                     include_cols="ID") %>% 
+                 dplyr::bind_rows() %>%
+                 tibble::as_tibble()
+
+
+Stats_by_block <- val_by_block %>% 
+  group_by(ID) %>% 
+    summarize(Mean=mean(Band_1, na.rm=TRUE),
+              Sum=sum(Band_1, na.rm=TRUE),
+              Num=sum(!is.na(Band_1),),
+              Pop=first(P1_001N)
+    ) %>% 
+  filter(Num>0)
+
+#   Add ID column to Blocks
+
+# Blocks <- Blocks %>% 
+#   rowid_to_column("ID")
+
+#   Join Blocks to stats
+
+Stat_blocks <- inner_join(Blocks, Stats_by_block, by="ID")
+
+#   What does it look like?
+
+tmap::tmap_options(basemaps="OpenStreetMap")
+
+tmap::tmap_mode("view") # set mode to interactive plots
+
+tmap::tm_shape(Stat_blocks) + 
+    #tmap::tm_sf(col="ConvoColor", alpha=0.3) +
+  # tmap::tm_fill(title = "Threat", alpha=0.3, style="pretty") +
+  tmap::tm_polygons(alpha=0.6,
+                    col="Mean",
+                    palette = "Blues",
+                    colorNA=NULL,
+                    title = "0.5 feet sea level rise",
+                    popup.vars=c("NAME",
+                                 "Mean",
+                                 "Sum",
+                                 "Num")
+                    )
+
+  # tm_polygons("Poverty_pct", alpha=0.5, popup.vars=c("Zip", 
+  #                                                    "Homes_Risk",
+  #                                                    "Homes_ratio"))
+
 ```
 
 
