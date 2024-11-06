@@ -48,9 +48,7 @@ df_tif <- terra::aggregate(terra::rast(infile),
 #   Get rid of flags
 df_tif2 <- terra::ifel(df_tif > 9, NA, df_tif)
 
-summary <- terra::summary(df_tif2)
-
-extent <- terra::ext(df_tif2)
+# summary <- terra::summary(df_tif2)
 
 ```
 
@@ -63,8 +61,11 @@ Census polygons are NAD83, EPSG:4269
 
 # Get blocks for Louisiana
 
+#     P16_002N  !!Total:!!Family households:
+#     P16_007N !!Total:!!Nonfamily households:
+
 Blocks <- get_decennial(geography="block",
-                        variables="P1_001N",
+                        variables=c("P1_001N", "P16_002N", "P16_007N"),
                         sumfile="dhc",
                         year=2020,
                         state="LA",
@@ -73,24 +74,48 @@ Blocks <- get_decennial(geography="block",
                         output="wide") %>% 
   rowid_to_column("ID")
 
-val_by_block <- terra::extract(df_tif2, 
-                               Blocks,
-                               exact=TRUE)
+
+#     Pull out only blocks that intersect the spatraster
+
+terra::gdalCache(size = 2000)
+foo <- prioritizr::intersecting_units(Blocks, df_tif2)
+Blocks_trim <- Blocks[foo,]
+
+# tmap::tmap_options(basemaps="OpenStreetMap")
+# 
+# tmap::tmap_mode("view") # set mode to interactive plots
+# 
+# tmap::tm_shape(Blocks_trim) + 
+#   # tmap::tm_fill(title = "Threat", alpha=0.3, style="pretty") +
+#   tmap::tm_polygons(alpha=0.6,
+#                     colorNA=NULL,
+#                     title = "0.5 feet sea level rise",
+#                     popup.vars=c("P1_001N",
+#                                  "NAME"
+#                                  )
+#                     )
+
+#   Failed - blew out memory
+# val_by_block <- terra::extract(df_tif2, 
+#                                Blocks,
+#                                exact=TRUE)
 
 val_by_block2 <- exactextractr::exact_extract(
                      x=df_tif2,
-                     y=Blocks,
-                     include_cols="ID") %>% 
+                     y=Blocks_trim,
+                     include_cols=c("ID","P1_001N","P16_002N", "P16_007N")) %>% 
                  dplyr::bind_rows() %>%
                  tibble::as_tibble()
 
 
-Stats_by_block <- val_by_block %>% 
+Stats_by_block <- val_by_block2 %>% 
   group_by(ID) %>% 
-    summarize(Mean=mean(Band_1, na.rm=TRUE),
-              Sum=sum(Band_1, na.rm=TRUE),
-              Num=sum(!is.na(Band_1),),
-              Pop=first(P1_001N)
+    summarize(Mean=mean(value, na.rm=TRUE),
+              Sum=sum(value, na.rm=TRUE),
+              Num=sum(!is.na(value)),
+              Pop=first(P1_001N),
+              Family_house=first(P16_002N),
+              Non_family_house=first(P16_007N)
     ) %>% 
   filter(Num>0)
 
