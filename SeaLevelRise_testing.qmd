@@ -47,6 +47,8 @@ df_tif <- terra::aggregate(terra::rast(infile),
 
 #   Get rid of flags
 df_tif2 <- terra::ifel(df_tif > 9, NA, df_tif)
+#   convert depths to feet
+df_tif2 <- df_tif2*3.28084
 
 # summary <- terra::summary(df_tif2)
 
@@ -113,6 +115,7 @@ Stats_by_block <- val_by_block2 %>%
     summarize(Mean=mean(value, na.rm=TRUE),
               Sum=sum(value, na.rm=TRUE),
               Num=sum(!is.na(value)),
+              Max=max(value, na.rm=TRUE),
               Pop=first(P1_001N),
               Family_house=first(P16_002N),
               Non_family_house=first(P16_007N)
@@ -145,7 +148,10 @@ tmap::tm_shape(Stat_blocks) +
                     popup.vars=c("NAME",
                                  "Mean",
                                  "Sum",
-                                 "Num")
+                                 "Num",
+                                 "Max",
+                                 "Pop",
+                                 "Family_house")
                     )
 
   # tm_polygons("Poverty_pct", alpha=0.5, popup.vars=c("Zip", 
@@ -155,7 +161,7 @@ tmap::tm_shape(Stat_blocks) +
 ```
 
 
-##        Make a map
+##        Make a map with raster 
 
 ```{r}
 
@@ -164,8 +170,6 @@ tmap::tmap_options(basemaps="OpenStreetMap")
 tmap::tmap_mode("view") # set mode to interactive plots
 
 tmap::tm_shape(df_tif2) + 
-    #tmap::tm_sf(col="ConvoColor", alpha=0.3) +
-  # tmap::tm_fill(title = "Threat", alpha=0.3, style="pretty") +
   tmap::tm_raster(alpha=0.3,
                   palette = "Blues",
                   colorNA=NULL,
