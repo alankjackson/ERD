@@ -53,7 +53,7 @@ Intersect_blocks <- function(df_tif, Blocks_trim) {
   val_by_block2 <- exactextractr::exact_extract(
                        x=df_tif,
                        y=Blocks_trim,
-                       include_cols=c("ID","P1_001N","P16_002N", "P16_007N")) %>% 
+                       include_cols=c("ID")) %>% 
                    dplyr::bind_rows() %>%
                    tibble::as_tibble()
   
@@ -63,10 +63,10 @@ Intersect_blocks <- function(df_tif, Blocks_trim) {
       summarize(Mean=mean(value, na.rm=TRUE),
                 Sum=sum(value, na.rm=TRUE),
                 Num=sum(!is.na(value)),
+                NumNA=sum(is.na(value)),
                 Max=max(value, na.rm=TRUE),
-                Pop=first(P1_001N),
-                Family_house=first(P16_002N),
-                Non_family_house=first(P16_007N)
+                Min=min(value, na.rm=TRUE),
+                Sigma=sd(value, na.rm=TRUE)
       ) %>% 
     filter(Num>0)
   
@@ -99,24 +99,36 @@ Blocks <- get_decennial(geography="block",
                         # county="201",
                         geometry=TRUE,
                         output="wide") %>% 
-  rowid_to_column("ID")
+  rowid_to_column("ID")  %>%  
+  select(ID, GEOID, NAME, Pop = P1_001N, 
+                          Fam_house = P16_002N, 
+                          NonFam_house = P16_007N)
 
 #   Run function for each geotif
 
+All_stats=NULL
 area_flag <- "None" # this will tell when we encounter a new area
-for (file in infiles[1]) {
-  print(file)
+t1 <- proc.time()
+i <- 0
+for (file in infiles) {
+  t2 <- proc.time()
+  print(t2-t1)
+  t1 <- t2
+  print(paste(file, "------", 126-i))
+  i <-  i + 1
   area <- str_extract(file, "_[[:alpha:]]*_")
   depth <- str_replace(str_extract(file, "\\d_\\d|\\d"), "_", ".")
   
   #   Read in geotiff, reduce by factor of 25, and output
   
+  print("Prep Tif")
   df_tif <- Prep_tif(paste0(bigpath, file))
 
   #     Pull out only blocks that intersect the spatraster, but only
   #     when the raster area has changed
   
   if (area_flag != area) {
+    print("Trim")
     terra::gdalCache(size = 2000)
     foo <- prioritizr::intersecting_units(Blocks, df_tif)
     Blocks_trim <- Blocks[foo,]
@@ -125,7 +137,16 @@ for (file in infiles[1]) {
 
   #   Intersect blocks with raster and calculate various summary stats 
   
+  print("Intersection and summary")
   Block_stats <- Intersect_blocks(df_tif, Blocks_trim) 
+  Block_stats <- Block_stats %>% mutate(Depth=depth)
   
+  #   Store results
+  
+  All_stats <- rbind(All_stats, Block_stats)
+  
+  #   just in case
+  
+  saveRDS(All_stats, paste0(bigpath, "All_stats.rds"))
 }
 ```
