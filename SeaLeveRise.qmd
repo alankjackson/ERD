@@ -1,0 +1,131 @@
+---
+title: "Sea Level Rise to Census"
+author: "Alan Jackson"
+format: html
+editor: source
+---
+
+
+##        NOAA data
+
+download from https://coast.noaa.gov/slrdata/Depth_Rasters/index.html
+
+Used wget with the convenient URL file NOAA provides to download all
+the geotiff files for the Gulf coast and the Atlantic coast.
+
+
+
+```{r setup}
+
+library(tidyverse)
+library(tidycensus)
+library(stringr)
+library(tmap)
+
+googlecrs <- "EPSG:4326"
+NOAAcrs <- "EPSG:4269"
+
+path <- "/home/ajackson/Dropbox/Rprojects/ERD/SeaLevel/"
+Curated_path <- "/home/ajackson/Dropbox/Rprojects/Curated_Data_Files/"
+mirror <- "/home/ajackson/Dropbox/mirrors/ajackson/ERD/"
+bigpath <- "/media/ajackson/ExtraDrive1/SeaLevel/"
+
+infiles <- list.files(path=bigpath, pattern="^LA_*") 
+
+############    function
+
+Prep_tif <- function(filename) {
+  #   File is too big - blows up PC memory
+  
+  df_tif <- terra::aggregate(terra::rast(filename), 
+                           fact=5, fun="median", na.rm=TRUE)
+  
+  #   Get rid of flags
+  df_tif <- terra::ifel(df_tif > 9, NA, df_tif)
+  #   convert depths to feet
+  df_tif <- df_tif*3.28084
+  
+  return(df_tif)
+} ###########   end function Prep_tif
+
+Intersect_blocks <- function(df_tif, Blocks_trim) {
+  #   Get intersecting blocks
+  val_by_block2 <- exactextractr::exact_extract(
+                       x=df_tif,
+                       y=Blocks_trim,
+                       include_cols=c("ID","P1_001N","P16_002N", "P16_007N")) %>% 
+                   dplyr::bind_rows() %>%
+                   tibble::as_tibble()
+  
+  #   Collapse data down to block level
+  Stats_by_block <- val_by_block2 %>% 
+    group_by(ID) %>% 
+      summarize(Mean=mean(value, na.rm=TRUE),
+                Sum=sum(value, na.rm=TRUE),
+                Num=sum(!is.na(value)),
+                Max=max(value, na.rm=TRUE),
+                Pop=first(P1_001N),
+                Family_house=first(P16_002N),
+                Non_family_house=first(P16_007N)
+      ) %>% 
+    filter(Num>0)
+  
+  #   Join Blocks to stats
+  
+  Stat_blocks <- inner_join(Blocks, Stats_by_block, by="ID")
+  
+  return(Stat_blocks)
+}  ########   end of function Intersect_blocks
+
+```
+
+##        Run function
+
+Note: the grids are in EPSG:4269
+Census polygons are NAD83, EPSG:4269
+
+```{r}
+
+# Get blocks for Louisiana
+
+#     P16_002N  !!Total:!!Family households:
+#     P16_007N !!Total:!!Nonfamily households:
+
+Blocks <- get_decennial(geography="block",
+                        variables=c("P1_001N", "P16_002N", "P16_007N"),
+                        sumfile="dhc",
+                        year=2020,
+                        state="LA",
+                        # county="201",
+                        geometry=TRUE,
+                        output="wide") %>% 
+  rowid_to_column("ID")
+
+#   Run function for each geotif
+
+area_flag <- "None" # this will tell when we encounter a new area
+for (file in infiles[1]) {
+  print(file)
+  area <- str_extract(file, "_[[:alpha:]]*_")
+  depth <- str_replace(str_extract(file, "\\d_\\d|\\d"), "_", ".")
+  
+  #   Read in geotiff, reduce by factor of 25, and output
+  
+  df_tif <- Prep_tif(paste0(bigpath, file))
+
+  #     Pull out only blocks that intersect the spatraster, but only
+  #     when the raster area has changed
+  
+  if (area_flag != area) {
+    terra::gdalCache(size = 2000)
+    foo <- prioritizr::intersecting_units(Blocks, df_tif)
+    Blocks_trim <- Blocks[foo,]
+    area_flag <- area
+  }
+
+  #   Intersect blocks with raster and calculate various summary stats 
+  
+  Block_stats <- Intersect_blocks(df_tif, Blocks_trim) 
+  
+}
+```
