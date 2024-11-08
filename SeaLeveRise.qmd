@@ -117,12 +117,14 @@ for (file in infiles) {
   print(paste(file, "------", 126-i))
   i <-  i + 1
   area <- str_extract(file, "_[[:alpha:]]*_")
-  depth <- str_replace(str_extract(file, "\\d_\\d|\\d"), "_", ".")
+  depth <- str_replace(str_extract(file, "\\d_\\d|\\d+"), "_", ".")
   
   #   Read in geotiff, reduce by factor of 25, and output
   
   print("Prep Tif")
   df_tif <- Prep_tif(paste0(bigpath, file))
+  
+  saveRDS(df_tif, paste0(bigpath, file, ".rds"))
 
   #     Pull out only blocks that intersect the spatraster, but only
   #     when the raster area has changed
@@ -150,3 +152,39 @@ for (file in infiles) {
   saveRDS(All_stats, paste0(bigpath, "All_stats.rds"))
 }
 ```
+
+
+##        Do some consolidation and cleanup at block level
+
+```{r}
+
+All_stats2 <- All_stats %>% 
+  filter(Pop>0) #   don't care if no one lives there
+
+```
+
+```{r}
+tmap::tmap_options(basemaps="OpenStreetMap")
+
+tmap::tmap_mode("view") # set mode to interactive plots
+
+tmap::tm_shape(All_stats2 %>% filter(GEOID=="220070503003030")) + 
+    #tmap::tm_sf(col="ConvoColor", alpha=0.3) +
+  # tmap::tm_fill(title = "Threat", alpha=0.3, style="pretty") +
+  tmap::tm_polygons(alpha=0.3,
+                    # col="Mean",
+                    # palette = "Blues",
+                    colorNA=NULL,
+                    title = "0.5 feet sea level rise",
+                    popup.vars=c("NAME",
+                                 "Mean",
+                                 "Sum",
+                                 "Num",
+                                 "Max",
+                                 "Pop",
+                                 "Fam_house")
+                    )
+```
+
+
+
