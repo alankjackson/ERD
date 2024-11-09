@@ -30,8 +30,6 @@ Curated_path <- "/home/ajackson/Dropbox/Rprojects/Curated_Data_Files/"
 mirror <- "/home/ajackson/Dropbox/mirrors/ajackson/ERD/"
 bigpath <- "/media/ajackson/ExtraDrive1/SeaLevel/"
 
-infiles <- list.files(path=bigpath, pattern="^LA_*") 
-
 ############    function
 
 Prep_tif <- function(filename) {
@@ -79,24 +77,25 @@ Intersect_blocks <- function(df_tif, Blocks_trim) {
 
 ```
 
-##        Run function
+##        Run function to shrink input geotiffs
 
 Note: the grids are in EPSG:4269
 Census polygons are NAD83, EPSG:4269
 
 ```{r}
-
-# Get blocks for Louisiana
+# Get blocks for Florida
 
 #     P16_002N  !!Total:!!Family households:
 #     P16_007N !!Total:!!Nonfamily households:
+
+Counties_AL = c("Mobile", "Washington", "Clarke", "Monroe", "Baldwin")
 
 Blocks <- get_decennial(geography="block",
                         variables=c("P1_001N", "P16_002N", "P16_007N"),
                         sumfile="dhc",
                         year=2020,
-                        state="LA",
-                        # county="201",
+                        state="FL",
+                        # county=Counties,
                         geometry=TRUE,
                         output="wide") %>% 
   rowid_to_column("ID")  %>%  
@@ -106,25 +105,52 @@ Blocks <- get_decennial(geography="block",
 
 #   Run function for each geotif
 
-All_stats=NULL
-area_flag <- "None" # this will tell when we encounter a new area
+infiles <- list.files(path=bigpath, pattern="^FL_*") 
+
 t1 <- proc.time()
 i <- 0
+tsum <- 0 #   elapsed time sum
 for (file in infiles) {
   t2 <- proc.time()
+  tsum <- tsum + t2[3] - t1[3]
   print(t2-t1)
   t1 <- t2
-  print(paste(file, "------", 126-i))
+  print(paste(file, "------", length(infiles)-i, "Time remaining",
+        length(infiles)*(tsum/i)/60, "minutes"))
   i <-  i + 1
-  area <- str_extract(file, "_[[:alpha:]]*_")
-  depth <- str_replace(str_extract(file, "\\d_\\d|\\d+"), "_", ".")
   
   #   Read in geotiff, reduce by factor of 25, and output
   
   print("Prep Tif")
   df_tif <- Prep_tif(paste0(bigpath, file))
   
-  saveRDS(df_tif, paste0(bigpath, file, ".rds"))
+  terra::writeRaster(df_tif, paste0(bigpath, file, "_small.tif"))
+
+}
+```
+
+##        Intersect blocks and geotifs
+
+```{r}
+
+All_stats_FL=NULL
+area_flag <- "None" # this will tell when we encounter a new area
+t1 <- proc.time()
+i <- 0
+tsum <- 0 #   elapsed time sum
+for (file in infiles) {
+
+  t2 <- proc.time()
+  tsum <- tsum + t2[3] - t1[3]
+  print(paste(file, "------", length(infiles)-i, "Time remaining",
+        length(infiles)*(tsum/i)/60, "minutes"))
+  print(t2-t1)
+  t1 <- t2
+  i <-  i + 1
+  area <- str_extract(file, "_[[:alpha:]]*_")
+  depth <- str_replace(str_extract(file, "\\d_\\d|\\d+"), "_", ".")
+  
+  df_tif <- terra::rast(paste0(bigpath, file, "_small.tif"))
 
   #     Pull out only blocks that intersect the spatraster, but only
   #     when the raster area has changed
@@ -141,15 +167,15 @@ for (file in infiles) {
   
   print("Intersection and summary")
   Block_stats <- Intersect_blocks(df_tif, Blocks_trim) 
-  Block_stats <- Block_stats %>% mutate(Depth=depth)
+  Block_stats <- Block_stats %>% mutate(Depth=depth) # store depth from filename
   
   #   Store results
   
-  All_stats <- rbind(All_stats, Block_stats)
+  All_stats_FL <- rbind(All_stats_FL, Block_stats)
   
   #   just in case
   
-  saveRDS(All_stats, paste0(bigpath, "All_stats.rds"))
+  saveRDS(All_stats_FL, paste0(bigpath, "All_stats_FL.rds"))
 }
 ```
 
@@ -187,4 +213,47 @@ tmap::tm_shape(All_stats2 %>% filter(GEOID=="220070503003030")) +
 ```
 
 
+```{r}
+for (file in infiles) {
+  t2 <- proc.time()
+  print(t2-t1)
+  t1 <- t2
+  print(paste(file, "------", 126-i))
+  i <-  i + 1
+  
+  #   Read in geotiff, reduce by factor of 25, and output
+  
+  print("Prep Tif")
+  df_tif <- Prep_tif(paste0(bigpath, file))
+  
+  terra::writeRaster(df_tif, paste0(bigpath, file, "_small.tif"))
+}
+
+terra::writeRaster(df_tif, paste0(bigpath, "testraster.tif"))
+terra::writeRaster(df_tif, paste0(bigpath, "testraster.grd"))
+
+foo1 <- terra::rast(paste0(bigpath, "testraster.tif"))
+foo2 <- terra::rast(paste0(bigpath, "testraster.grd"))
+foo3 <- readRDS(paste0(bigpath, "LA_West_slr_depth_9ft.tif.rds"))
+
+tmap::tmap_options(basemaps="OpenStreetMap")
+
+tmap::tmap_mode("view") # set mode to interactive plots
+
+tmap::tm_shape(foo1) + 
+  tmap::tm_raster(alpha=0.3,
+                  palette = "Blues",
+                  colorNA=NULL,
+                  title = "foo1")+
+tmap::tm_shape(foo2) + 
+  tmap::tm_raster(alpha=0.3,
+                  palette = "Blues",
+                  colorNA=NULL,
+                  title = "foo2") #+
+tmap::tm_shape(foo3) + 
+  tmap::tm_raster(alpha=0.3,
+                  palette = "Blues",
+                  colorNA=NULL,
+                  title = "foo3")
+```
 
