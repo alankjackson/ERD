@@ -52,13 +52,13 @@ Intersect_blocks <- function(df_tif, Blocks_trim) {
   val_by_block2 <- exactextractr::exact_extract(
                        x=df_tif,
                        y=Blocks_trim,
-                       include_cols=c("ID")) %>% 
+                       include_cols=c("GEOID")) %>% 
                    dplyr::bind_rows() %>%
                    tibble::as_tibble()
   
   #   Collapse data down to block level
   Stats_by_block <- val_by_block2 %>% 
-    group_by(ID) %>% 
+    group_by(GEOID) %>% 
       summarize(Mean=mean(value, na.rm=TRUE),
                 Sum=sum(value*coverage_fraction, na.rm=TRUE),
                 SumFrac=sum(coverage_fraction, na.rm=TRUE),
@@ -72,7 +72,7 @@ Intersect_blocks <- function(df_tif, Blocks_trim) {
   
   #   Join Blocks to stats
   
-  Stat_blocks <- inner_join(Blocks_trim, Stats_by_block, by="ID")
+  Stat_blocks <- inner_join(Blocks_trim, Stats_by_block, by="GEOID")
   
   return(Stat_blocks)
 }  ########   end of function Intersect_blocks
@@ -160,14 +160,14 @@ infiles <- list.files(path=bigpath, pattern=paste0("^",State,"_*"))
 # infiles <- infiles[!str_detect(infiles, "small")]
 t1 <- proc.time()
 i <- 0
-tsum <- 0 #   elapsed time sum
+tsum <- 0.001 #   elapsed time sum
 for (file in infiles) {
 
   t2 <- proc.time()
   tsum <- tsum + t2[3] - t1[3]
   print(paste(file, "------", length(infiles)-i, "Time remaining",
-        signif((length(infiles)-i)*(tsum/i)/60, "minutes"),3))
-  print(t2-t1)
+        signif((length(infiles)-i)*(tsum/i)/60, 3), "minutes"))
+print(t2-t1)
   t1 <- t2
   i <-  i + 1
   area <- str_extract(file, "_[[:alpha:]]*_")
@@ -264,8 +264,8 @@ acs_vars <- c(Pop_blk_grp="B01001_001", # Total population by blk grp
 ACS <- get_acs(geography="block group",
                variables=acs_vars,
                year=2020,
-               state="AL",
-               county=Counties_AL,
+               state=State,
+               county=Counties,
                output="wide",
                geometry=FALSE) 
 
