@@ -21,6 +21,7 @@ library(tidyverse)
 library(tidycensus)
 library(stringr)
 library(tmap)
+library(terra)
 
 googlecrs <- "EPSG:4326"
 NOAAcrs <- "EPSG:4269"
@@ -59,7 +60,8 @@ Intersect_blocks <- function(df_tif, Blocks_trim) {
   Stats_by_block <- val_by_block2 %>% 
     group_by(ID) %>% 
       summarize(Mean=mean(value, na.rm=TRUE),
-                Sum=sum(value, na.rm=TRUE),
+                Sum=sum(value*coverage_fraction, na.rm=TRUE),
+                SumFrac=sum(coverage_fraction, na.rm=TRUE),
                 Num=sum(!is.na(value)),
                 NumNA=sum(is.na(value)),
                 Max=max(value, na.rm=TRUE),
@@ -70,53 +72,70 @@ Intersect_blocks <- function(df_tif, Blocks_trim) {
   
   #   Join Blocks to stats
   
-  Stat_blocks <- inner_join(Blocks, Stats_by_block, by="ID")
+  Stat_blocks <- inner_join(Blocks_trim, Stats_by_block, by="ID")
   
   return(Stat_blocks)
 }  ########   end of function Intersect_blocks
 
 ```
 
-##        Run function to shrink input geotiffs
+##        get census blocks
 
 Note: the grids are in EPSG:4269
 Census polygons are NAD83, EPSG:4269
 
 ```{r}
-# Get blocks for Florida
+State <- "LA"
+# Get blocks for State
 
 #     P16_002N  !!Total:!!Family households:
 #     P16_007N !!Total:!!Nonfamily households:
 
-Counties_AL = c("Mobile", "Washington", "Clarke", "Monroe", "Baldwin")
+Counties_AL <-  c("Mobile", "Washington", "Clarke", "Monroe", "Baldwin")
+Counties_FL <- NULL #   All the counties
+Counties_TX <- c("Calhoun", "Jackson", "Matagorda", "Victoria",
+"Hardin", "Jasper", "Jefferson", "Newton", "Orange",
+"Brazoria", "Chambers", "Galveston", "Harris", "Liberty",
+"Aransas", "Nueces", "Refugio", "San Patricio",
+"Cameron", "Kenedy", "Kleberg", "Willacy")
+Counties_LA <- c("Acadia", "Iberia", "Lafayette", "St. Martin", "St. Mary", "Vermilion", "Jefferson", "Orleans", "Plaquemines", "St. Bernard", "St. Charles", "St. John the Baptist",  "Ascension", "East Baton Rouge", "Iberville", "Jefferson", "Livingston", "Orleans", "St. Charles", "St. James", "St. Tammany", "Tangipahoa", "West Feliciana", "Allen", "Beauregard", "Calcasieu", "Cameron", "Jefferson Davis",
+"Lafourche", "Terrebonne" )
+Counties_LA <- NULL
+
+#   Fill counties variable with proper stuff
+Counties=eval(parse(text=paste0("Counties_", State)))
 
 Blocks <- get_decennial(geography="block",
                         variables=c("P1_001N", "P16_002N", "P16_007N"),
                         sumfile="dhc",
                         year=2020,
-                        state="FL",
-                        # county=Counties,
+                        state=State,
+                        county=Counties,
                         geometry=TRUE,
                         output="wide") %>% 
   rowid_to_column("ID")  %>%  
   select(ID, GEOID, NAME, Pop = P1_001N, 
                           Fam_house = P16_002N, 
                           NonFam_house = P16_007N)
+```
 
+#       Compact geotiffs
+
+```{r}
 #   Run function for each geotif
 
-infiles <- list.files(path=bigpath, pattern="^FL_*") 
+infiles <- list.files(path=bigpath, pattern=paste0("^",State,"_*")) 
 
 t1 <- proc.time()
 i <- 0
 tsum <- 0 #   elapsed time sum
-for (file in infiles) {
+for (file in infiles[332:397]) {
   t2 <- proc.time()
   tsum <- tsum + t2[3] - t1[3]
   print(t2-t1)
   t1 <- t2
   print(paste(file, "------", length(infiles)-i, "Time remaining",
-        length(infiles)*(tsum/i)/60, "minutes"))
+        signif((length(infiles)-i)*(tsum/i)/60, "minutes"),3))
   i <-  i + 1
   
   #   Read in geotiff, reduce by factor of 25, and output
@@ -125,6 +144,8 @@ for (file in infiles) {
   df_tif <- Prep_tif(paste0(bigpath, file))
   
   terra::writeRaster(df_tif, paste0(bigpath, file, "_small.tif"))
+  
+  terra::tmpFiles(remove=TRUE) # do some cleanup
 
 }
 ```
@@ -133,8 +154,10 @@ for (file in infiles) {
 
 ```{r}
 
-All_stats_FL=NULL
+All_stats=NULL
 area_flag <- "None" # this will tell when we encounter a new area
+infiles <- list.files(path=bigpath, pattern=paste0("^",State,"_*")) 
+# infiles <- infiles[!str_detect(infiles, "small")]
 t1 <- proc.time()
 i <- 0
 tsum <- 0 #   elapsed time sum
@@ -143,14 +166,15 @@ for (file in infiles) {
   t2 <- proc.time()
   tsum <- tsum + t2[3] - t1[3]
   print(paste(file, "------", length(infiles)-i, "Time remaining",
-        length(infiles)*(tsum/i)/60, "minutes"))
+        signif((length(infiles)-i)*(tsum/i)/60, "minutes"),3))
   print(t2-t1)
   t1 <- t2
   i <-  i + 1
   area <- str_extract(file, "_[[:alpha:]]*_")
   depth <- str_replace(str_extract(file, "\\d_\\d|\\d+"), "_", ".")
   
-  df_tif <- terra::rast(paste0(bigpath, file, "_small.tif"))
+  df_tif <- terra::rast(paste0(bigpath, file))
+  # df_tif <- terra::rast(paste0(bigpath, file, "_small.tif"))
 
   #     Pull out only blocks that intersect the spatraster, but only
   #     when the raster area has changed
@@ -171,11 +195,11 @@ for (file in infiles) {
   
   #   Store results
   
-  All_stats_FL <- rbind(All_stats_FL, Block_stats)
+  All_stats <- rbind(All_stats, Block_stats)
   
   #   just in case
   
-  saveRDS(All_stats_FL, paste0(bigpath, "All_stats_FL.rds"))
+  saveRDS(All_stats, paste0(bigpath, "All_stats_", State,".rds"))
 }
 ```
 
@@ -183,9 +207,107 @@ for (file in infiles) {
 ##        Do some consolidation and cleanup at block level
 
 ```{r}
-
 All_stats2 <- All_stats %>% 
   filter(Pop>0) #   don't care if no one lives there
+
+All_stats2 %>% filter(Pop<100) %>% 
+  ggplot() + geom_histogram(aes(x=Pop))
+
+#   Combine records with identical block GEOID's
+
+foo <- All_stats2 %>% 
+  group_by(GEOID, Depth) %>% 
+    summarise(NAME=first(NAME),
+              Pop=first(Pop),
+              Sum=sum(Sum),
+              Num=sum(Num))
+
+#     And none were found. Probably because eveything honors county boundaries.
+
+#     Combine to Block-Groups
+
+foo <- All_stats2 %>% 
+  mutate(Blk_grp=str_sub(GEOID, 1, 12))
+
+#   Calculate some stats by block group 
+
+BG_stats <- foo %>% 
+  sf::st_drop_geometry() %>% 
+  group_by(Blk_grp, Depth) %>% 
+    summarise(T_pop=sum(Pop),
+              T_Fam_house=sum(Fam_house),
+              T_NonFam_house=sum(NonFam_house),
+              T_Num=sum(Num),
+              T_NumNA=sum(NumNA),
+              Num_blks=n()
+              )
+
+#   Join block group stats to block dataframe and calculate more stuff and filter
+
+All_BG <- left_join(foo, BG_stats, by=c("Depth", "Blk_grp"), 
+                  relationship="many-to-one") %>% 
+  # filter(Pop>=25) %>% 
+  # filter(Fam_house>=5) %>% 
+  mutate(Pop_pct=Pop/T_pop) %>% 
+  mutate(Flood_pct=Num/(NumNA+Num)) #%>% 
+  # filter(Pop_pct>=0.05) %>% 
+  # filter(Flood_pct>=0.05)
+
+acs_vars <- c(Pop_blk_grp="B01001_001", # Total population by blk grp
+              Med_inc="B19013_001", # median household income, blk grp
+              Per_cap_inc="B19301_001", # Per capita income, blk grp
+              Fam="B17010_001", # Families, blk grp
+              Fam_in_poverty="B17010_002", # Families in poverty, blk grp
+              Aggreg_inc="B19025_001", # Aggregate household income, blk grp
+              Households="B11012_001", # Households, blk grp
+              Med_age="B01002_001") # median age, blk grp
+ACS <- get_acs(geography="block group",
+               variables=acs_vars,
+               year=2020,
+               state="AL",
+               county=Counties_AL,
+               output="wide",
+               geometry=FALSE) 
+
+ACS <- ACS %>% 
+  mutate(Pct_poverty=100*Fam_in_povertyE/FamE) %>% 
+  select(GEOID, Pop=Pop_blk_grpE, Med_inc=Med_incE, Per_cap_in=Per_cap_incE,
+         Fam=FamE, Fam_in_poverty=Fam_in_povertyE, Aggreg_inc=Aggreg_incE,
+         Pct_poverty, Households=HouseholdsE, Med_ageE=Med_ageE)
+
+All_BG <- All_BG %>% 
+  left_join(., ACS, by=join_by(Blk_grp==GEOID), 
+                  relationship="many-to-one") %>% 
+  relocate(T_pop, .after=Pop.x) %>% 
+  relocate(Pop.y, .after=Pop.x)
+  
+  
+```
+
+##        Make some plots
+
+```{r}
+foo3 %>% sf::st_drop_geometry() %>% 
+  ggplot(aes(x=Flood_pct*100)) +
+  geom_histogram() +
+  facet_wrap(~ Depth, nrow=5) +
+  labs(title="Flooding in Alabama at different levels of sea level rise",
+       x="Percent of Census Block flooded",
+       y="Number of Census Blocks")
+
+foo3 %>% sf::st_drop_geometry() %>% 
+  ggplot(aes(x=Flood_pct*100, y=Pop)) +
+  geom_point() +
+  facet_wrap(~ Depth, nrow=5) +
+  labs(title="Flooding in Alabama at different levels of sea level rise",
+       x="Percent of Census Block flooded",
+       y="Population of Census Blocks")
+
+
+
+
+
+
 
 ```
 
@@ -194,14 +316,15 @@ tmap::tmap_options(basemaps="OpenStreetMap")
 
 tmap::tmap_mode("view") # set mode to interactive plots
 
-tmap::tm_shape(All_stats2 %>% filter(GEOID=="220070503003030")) + 
+tmap::tm_shape(All_stats2 %>% filter(str_starts(GEOID, "010030114191001")) %>% 
+                                 filter(Depth==10)) + 
     #tmap::tm_sf(col="ConvoColor", alpha=0.3) +
   # tmap::tm_fill(title = "Threat", alpha=0.3, style="pretty") +
   tmap::tm_polygons(alpha=0.3,
-                    # col="Mean",
-                    # palette = "Blues",
+                    col="Mean",
+                    palette = "Blues",
                     colorNA=NULL,
-                    title = "0.5 feet sea level rise",
+                    title = "10 feet sea level rise",
                     popup.vars=c("NAME",
                                  "Mean",
                                  "Sum",
