@@ -52,6 +52,7 @@ Intersect_blocks <- function(df_tif, Blocks_trim) {
   val_by_block2 <- exactextractr::exact_extract(
                        x=df_tif,
                        y=Blocks_trim,
+                       max_cells_in_memory=8e+07,
                        include_cols=c("GEOID")) %>% 
                    dplyr::bind_rows() %>%
                    tibble::as_tibble()
@@ -60,8 +61,9 @@ Intersect_blocks <- function(df_tif, Blocks_trim) {
   Stats_by_block <- val_by_block2 %>% 
     group_by(GEOID) %>% 
       summarize(Mean=mean(value, na.rm=TRUE),
-                Sum=sum(value*coverage_fraction, na.rm=TRUE),
-                SumFrac=sum(coverage_fraction, na.rm=TRUE),
+                Wmean=stats::weighted.mean(value, coverage_fraction, na.rm=TRUE),
+                Wvaluesum=sum(value*coverage_fraction, na.rm=TRUE),
+                Weights=sum(coverage_fraction, na.rm=TRUE),
                 Num=sum(!is.na(value)),
                 NumNA=sum(is.na(value)),
                 Max=max(value, na.rm=TRUE),
@@ -85,7 +87,7 @@ Note: the grids are in EPSG:4269
 Census polygons are NAD83, EPSG:4269
 
 ```{r}
-State <- "LA"
+State <- "AL"
 # Get blocks for State
 
 #     P16_002N  !!Total:!!Family households:
@@ -95,7 +97,7 @@ Counties_AL <-  c("Mobile", "Washington", "Clarke", "Monroe", "Baldwin")
 Counties_FL <- NULL #   All the counties
 Counties_TX <- c("Calhoun", "Jackson", "Matagorda", "Victoria",
 "Hardin", "Jasper", "Jefferson", "Newton", "Orange",
-"Brazoria", "Chambers", "Galveston", "Harris", "Liberty",
+"Brazoria", "Chambers", "Galveston", "Harris county", "Liberty",
 "Aransas", "Nueces", "Refugio", "San Patricio",
 "Cameron", "Kenedy", "Kleberg", "Willacy")
 Counties_LA <- c("Acadia", "Iberia", "Lafayette", "St. Martin", "St. Mary", "Vermilion", "Jefferson", "Orleans", "Plaquemines", "St. Bernard", "St. Charles", "St. John the Baptist",  "Ascension", "East Baton Rouge", "Iberville", "Jefferson", "Livingston", "Orleans", "St. Charles", "St. James", "St. Tammany", "Tangipahoa", "West Feliciana", "Allen", "Beauregard", "Calcasieu", "Cameron", "Jefferson Davis",
@@ -113,10 +115,9 @@ Blocks <- get_decennial(geography="block",
                         county=Counties,
                         geometry=TRUE,
                         output="wide") %>% 
-  rowid_to_column("ID")  %>%  
-  select(ID, GEOID, NAME, Pop = P1_001N, 
-                          Fam_house = P16_002N, 
-                          NonFam_house = P16_007N)
+  select(GEOID, NAME, Pop_blk = P1_001N, 
+                      Fam_house_blk = P16_002N, 
+                      NonFam_house_blk = P16_007N)
 ```
 
 #       Compact geotiffs
@@ -129,13 +130,13 @@ infiles <- list.files(path=bigpath, pattern=paste0("^",State,"_*"))
 t1 <- proc.time()
 i <- 0
 tsum <- 0 #   elapsed time sum
-for (file in infiles[332:397]) {
+for (file in infiles) {
   t2 <- proc.time()
   tsum <- tsum + t2[3] - t1[3]
   print(t2-t1)
   t1 <- t2
-  print(paste(file, "------", length(infiles)-i, "Time remaining",
-        signif((length(infiles)-i)*(tsum/i)/60, "minutes"),3))
+  print(paste(file, "------", length(infiles)-i, "Time remaining =",
+        signif((length(infiles)-i)*(tsum/i)/60, 3), "minutes"))
   i <-  i + 1
   
   #   Read in geotiff, reduce by factor of 25, and output
@@ -165,12 +166,12 @@ for (file in infiles) {
 
   t2 <- proc.time()
   tsum <- tsum + t2[3] - t1[3]
-  print(paste(file, "------", length(infiles)-i, "Time remaining",
+  print(paste(file, "------", length(infiles)-i, "Time remaining =",
         signif((length(infiles)-i)*(tsum/i)/60, 3), "minutes"))
 print(t2-t1)
   t1 <- t2
   i <-  i + 1
-  area <- str_extract(file, "_[[:alpha:]]*_")
+  area <- str_extract(file, "^\\w*_slr")
   depth <- str_replace(str_extract(file, "\\d_\\d|\\d+"), "_", ".")
   
   df_tif <- terra::rast(paste0(bigpath, file))
@@ -207,39 +208,49 @@ print(t2-t1)
 ##        Do some consolidation and cleanup at block level
 
 ```{r}
-All_stats2 <- All_stats %>% 
-  filter(Pop>0) #   don't care if no one lives there
 
-All_stats2 %>% filter(Pop<100) %>% 
-  ggplot() + geom_histogram(aes(x=Pop))
+All_stats <- readRDS(paste0(bigpath, "All_stats_", State,".rds"))
+
+All_stats2 <- All_stats %>% 
+  filter(Pop_blk>0) #   don't care if no one lives there
+
+All_stats2 %>% filter(Pop_blk<100) %>% 
+  ggplot() + geom_histogram(aes(x=Pop_blk))
 
 #   Combine records with identical block GEOID's
 
 foo <- All_stats2 %>% 
+  sf::st_drop_geometry() %>% # geometry can be the only difference
   group_by(GEOID, Depth) %>% 
     summarise(NAME=first(NAME),
               Pop=first(Pop),
-              Sum=sum(Sum),
-              Num=sum(Num))
+              Wmean=max(Wmean),
+              Wvaluesum=sum(Wvaluesum),
+              Weights=sum(Weights),
+              Fam_house=first(Fam_house),
+              NonFam_house=first(NonFam_house),
+              NumNA=sum(NumNA),
+              Num=sum(Num)) %>% 
+  ungroup()
 
-#     And none were found. Probably because eveything honors county boundaries.
+#     And some were found!
 
 #     Combine to Block-Groups
 
-foo <- All_stats2 %>% 
+foo <- foo %>% 
   mutate(Blk_grp=str_sub(GEOID, 1, 12))
 
 #   Calculate some stats by block group 
 
 BG_stats <- foo %>% 
-  sf::st_drop_geometry() %>% 
   group_by(Blk_grp, Depth) %>% 
     summarise(T_pop=sum(Pop),
               T_Fam_house=sum(Fam_house),
               T_NonFam_house=sum(NonFam_house),
               T_Num=sum(Num),
               T_NumNA=sum(NumNA),
-              Num_blks=n()
+              Num_blks=n(),
+              Mean=sum(Wvaluesum)/sum(Weights)
               )
 
 #   Join block group stats to block dataframe and calculate more stuff and filter
@@ -253,8 +264,7 @@ All_BG <- left_join(foo, BG_stats, by=c("Depth", "Blk_grp"),
   # filter(Pop_pct>=0.05) %>% 
   # filter(Flood_pct>=0.05)
 
-acs_vars <- c(Pop_blk_grp="B01001_001", # Total population by blk grp
-              Med_inc="B19013_001", # median household income, blk grp
+acs_vars <- c(Med_inc="B19013_001", # median household income, blk grp
               Per_cap_inc="B19301_001", # Per capita income, blk grp
               Fam="B17010_001", # Families, blk grp
               Fam_in_poverty="B17010_002", # Families in poverty, blk grp
@@ -271,15 +281,15 @@ ACS <- get_acs(geography="block group",
 
 ACS <- ACS %>% 
   mutate(Pct_poverty=100*Fam_in_povertyE/FamE) %>% 
-  select(GEOID, Pop=Pop_blk_grpE, Med_inc=Med_incE, Per_cap_in=Per_cap_incE,
+  select(GEOID, Med_inc=Med_incE, Per_cap_in=Per_cap_incE,
          Fam=FamE, Fam_in_poverty=Fam_in_povertyE, Aggreg_inc=Aggreg_incE,
          Pct_poverty, Households=HouseholdsE, Med_ageE=Med_ageE)
 
 All_BG <- All_BG %>% 
   left_join(., ACS, by=join_by(Blk_grp==GEOID), 
                   relationship="many-to-one") %>% 
-  relocate(T_pop, .after=Pop.x) %>% 
-  relocate(Pop.y, .after=Pop.x)
+  relocate(T_pop, .after=Pop) %>% 
+  relocate(Depth, .after=T_pop)
   
   
 ```
@@ -337,46 +347,27 @@ tmap::tm_shape(All_stats2 %>% filter(str_starts(GEOID, "010030114191001")) %>%
 
 
 ```{r}
-for (file in infiles) {
-  t2 <- proc.time()
-  print(t2-t1)
-  t1 <- t2
-  print(paste(file, "------", 126-i))
-  i <-  i + 1
-  
-  #   Read in geotiff, reduce by factor of 25, and output
-  
-  print("Prep Tif")
-  df_tif <- Prep_tif(paste0(bigpath, file))
-  
-  terra::writeRaster(df_tif, paste0(bigpath, file, "_small.tif"))
-}
 
-terra::writeRaster(df_tif, paste0(bigpath, "testraster.tif"))
-terra::writeRaster(df_tif, paste0(bigpath, "testraster.grd"))
 
-foo1 <- terra::rast(paste0(bigpath, "testraster.tif"))
-foo2 <- terra::rast(paste0(bigpath, "testraster.grd"))
-foo3 <- readRDS(paste0(bigpath, "LA_West_slr_depth_9ft.tif.rds"))
+foo3 <- terra::rast(paste0(bigpath, "AL_slr_depth_10ft.tif_small.tif"))
+
+foo3 <- terra::crop(foo3, Blocks_dhc)
 
 tmap::tmap_options(basemaps="OpenStreetMap")
 
 tmap::tmap_mode("view") # set mode to interactive plots
 
-tmap::tm_shape(foo1) + 
+tmap::tm_shape(foo3) +
   tmap::tm_raster(alpha=0.3,
-                  palette = "Blues",
+                  col="AL_slr_depth_10ft",
+                  # palette = "Blues",
                   colorNA=NULL,
-                  title = "foo1")+
-tmap::tm_shape(foo2) + 
-  tmap::tm_raster(alpha=0.3,
-                  palette = "Blues",
-                  colorNA=NULL,
-                  title = "foo2") #+
-tmap::tm_shape(foo3) + 
-  tmap::tm_raster(alpha=0.3,
-                  palette = "Blues",
-                  colorNA=NULL,
-                  title = "foo3")
+                  title = "foo3") +
+#  tmap_leaflet(
+#   tm_shape(foo3) +
+#   tm_raster(alpha = 0.3)
+# ) 
+  tmap::tm_shape(Blocks_dhc) +
+    tmap::tm_polygons(alpha=0.0)
 ```
 
