@@ -87,7 +87,7 @@ Note: the grids are in EPSG:4269
 Census polygons are NAD83, EPSG:4269
 
 ```{r}
-State <- "AL"
+State <- "FL"
 # Get blocks for State
 
 #     P16_002N  !!Total:!!Family households:
@@ -223,12 +223,12 @@ foo <- All_stats2 %>%
   sf::st_drop_geometry() %>% # geometry can be the only difference
   group_by(GEOID, Depth) %>% 
     summarise(NAME=first(NAME),
-              Pop=first(Pop),
+              Pop_blk=first(Pop_blk),
               Wmean=max(Wmean),
               Wvaluesum=sum(Wvaluesum),
               Weights=sum(Weights),
-              Fam_house=first(Fam_house),
-              NonFam_house=first(NonFam_house),
+              Fam_house_blk=first(Fam_house_blk),
+              NonFam_house_blk=first(NonFam_house_blk),
               NumNA=sum(NumNA),
               Num=sum(Num)) %>% 
   ungroup()
@@ -244,9 +244,9 @@ foo <- foo %>%
 
 BG_stats <- foo %>% 
   group_by(Blk_grp, Depth) %>% 
-    summarise(T_pop=sum(Pop),
-              T_Fam_house=sum(Fam_house),
-              T_NonFam_house=sum(NonFam_house),
+    summarise(T_pop=sum(Pop_blk),
+              T_Fam_house=sum(Fam_house_blk),
+              T_NonFam_house=sum(NonFam_house_blk),
               T_Num=sum(Num),
               T_NumNA=sum(NumNA),
               Num_blks=n(),
@@ -259,7 +259,7 @@ All_BG <- left_join(foo, BG_stats, by=c("Depth", "Blk_grp"),
                   relationship="many-to-one") %>% 
   # filter(Pop>=25) %>% 
   # filter(Fam_house>=5) %>% 
-  mutate(Pop_pct=Pop/T_pop) %>% 
+  mutate(Pop_pct=Pop_blk/T_pop) %>% 
   mutate(Flood_pct=Num/(NumNA+Num)) #%>% 
   # filter(Pop_pct>=0.05) %>% 
   # filter(Flood_pct>=0.05)
