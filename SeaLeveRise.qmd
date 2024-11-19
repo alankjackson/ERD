@@ -13,6 +13,12 @@ download from https://coast.noaa.gov/slrdata/Depth_Rasters/index.html
 Used wget with the convenient URL file NOAA provides to download all
 the geotiff files for the Gulf coast and the Atlantic coast.
 
+Each state conveniently includes a text file of the counties included, 
+which can be used as input to wget, as in:
+
+wget --input-file=URLlist_SC.txt 
+
+Note that the county list for Louisiana is incomplete.
 
 
 ```{r setup}
@@ -60,8 +66,7 @@ Intersect_blocks <- function(df_tif, Blocks_trim) {
   #   Collapse data down to block level
   Stats_by_block <- val_by_block2 %>% 
     group_by(GEOID) %>% 
-      summarize(Mean=mean(value, na.rm=TRUE),
-                Wmean=stats::weighted.mean(value, coverage_fraction, na.rm=TRUE),
+      summarize(Wmean=stats::weighted.mean(value, coverage_fraction, na.rm=TRUE),
                 Wvaluesum=sum(value*coverage_fraction, na.rm=TRUE),
                 Weights=sum(coverage_fraction, na.rm=TRUE),
                 Num=sum(!is.na(value)),
@@ -87,7 +92,7 @@ Note: the grids are in EPSG:4269
 Census polygons are NAD83, EPSG:4269
 
 ```{r}
-State <- "FL"
+State <- "AL"
 # Get blocks for State
 
 #     P16_002N  !!Total:!!Family households:
@@ -102,7 +107,8 @@ Counties_TX <- c("Calhoun", "Jackson", "Matagorda", "Victoria",
 "Cameron", "Kenedy", "Kleberg", "Willacy")
 Counties_LA <- c("Acadia", "Iberia", "Lafayette", "St. Martin", "St. Mary", "Vermilion", "Jefferson", "Orleans", "Plaquemines", "St. Bernard", "St. Charles", "St. John the Baptist",  "Ascension", "East Baton Rouge", "Iberville", "Jefferson", "Livingston", "Orleans", "St. Charles", "St. James", "St. Tammany", "Tangipahoa", "West Feliciana", "Allen", "Beauregard", "Calcasieu", "Cameron", "Jefferson Davis",
 "Lafourche", "Terrebonne" )
-Counties_LA <- NULL
+Counties_LA <- NULL # list is incomplete
+Counties_GA <- c("Bryan", "Chatham", "Effingham", "Liberty", "Long", "McIntosh", "Brantley", "Camden", "Charlton", "Glynn", "Wayne")
 
 #   Fill counties variable with proper stuff
 Counties=eval(parse(text=paste0("Counties_", State)))
@@ -158,7 +164,6 @@ for (file in infiles) {
 All_stats=NULL
 area_flag <- "None" # this will tell when we encounter a new area
 infiles <- list.files(path=bigpath, pattern=paste0("^",State,"_*")) 
-# infiles <- infiles[!str_detect(infiles, "small")]
 t1 <- proc.time()
 i <- 0
 tsum <- 0.001 #   elapsed time sum
@@ -175,7 +180,6 @@ print(t2-t1)
   depth <- str_replace(str_extract(file, "\\d_\\d|\\d+"), "_", ".")
   
   df_tif <- terra::rast(paste0(bigpath, file))
-  # df_tif <- terra::rast(paste0(bigpath, file, "_small.tif"))
 
   #     Pull out only blocks that intersect the spatraster, but only
   #     when the raster area has changed
@@ -200,7 +204,7 @@ print(t2-t1)
   
   #   just in case
   
-  saveRDS(All_stats, paste0(bigpath, "All_stats_", State,".rds"))
+  saveRDS(All_stats, paste0(path, "All_stats_", State,".rds"))
 }
 ```
 
@@ -209,9 +213,11 @@ print(t2-t1)
 
 ```{r}
 
-All_stats <- readRDS(paste0(bigpath, "All_stats_", State,".rds"))
+All_stats <- readRDS(paste0(path, "All_stats_", State,".rds"))
 
 All_stats2 <- All_stats %>% 
+  rename(Pop_blk=Pop, Fam_house_blk=Fam_house,
+         NonFam_house_blk=NonFam_house) %>% 
   filter(Pop_blk>0) #   don't care if no one lives there
 
 All_stats2 %>% filter(Pop_blk<100) %>% 
@@ -233,9 +239,9 @@ foo <- All_stats2 %>%
               Num=sum(Num)) %>% 
   ungroup()
 
-#     And some were found!
+#     And none were found!
 
-#     Combine to Block-Groups
+#     Calculate Block-Groups
 
 foo <- foo %>% 
   mutate(Blk_grp=str_sub(GEOID, 1, 12))
@@ -244,27 +250,45 @@ foo <- foo %>%
 
 BG_stats <- foo %>% 
   group_by(Blk_grp, Depth) %>% 
-    summarise(T_pop=sum(Pop_blk),
+    summarise(T_pop=sum(Pop_blk), # Pop of blocks at risk
               T_Fam_house=sum(Fam_house_blk),
               T_NonFam_house=sum(NonFam_house_blk),
               T_Num=sum(Num),
               T_NumNA=sum(NumNA),
               Num_blks=n(),
-              Mean=sum(Wvaluesum)/sum(Weights)
+              Mean_grp=sum(Wvaluesum)/sum(Weights)
               )
 
 #   Join block group stats to block dataframe and calculate more stuff and filter
 
 All_BG <- left_join(foo, BG_stats, by=c("Depth", "Blk_grp"), 
                   relationship="many-to-one") %>% 
-  # filter(Pop>=25) %>% 
-  # filter(Fam_house>=5) %>% 
+  filter(Pop_blk>=25) %>%
+  filter(Fam_house_blk>=5) %>%
   mutate(Pop_pct=Pop_blk/T_pop) %>% 
-  mutate(Flood_pct=Num/(NumNA+Num)) #%>% 
-  # filter(Pop_pct>=0.05) %>% 
-  # filter(Flood_pct>=0.05)
+  mutate(Flood_pct=Num/(NumNA+Num)) %>% 
+  # filter(Pop_pct>=0.05) %>%
+  filter(Flood_pct>=0.05)
 
-acs_vars <- c(Med_inc="B19013_001", # median household income, blk grp
+#   Final dataset to be saved by block
+
+Block_geom <- All_stats2 %>% 
+  filter(Depth==10) %>% 
+  select(GEOID, geometry)
+Block_data <- All_BG %>% 
+  select(GEOID, Depth, NAME, Pop_blk, Wmean, Fam_house_blk,
+         NonFam_house_blk, Blk_grp, Pct_Pop_at_risk=Pop_pct, 
+         Flood_pct)  
+  #   Add geometry
+Block_data <- inner_join(Block_data, Block_geom, by=join_by(GEOID),
+                         relationship="many-to-one")
+
+saveRDS(Block_data, paste0(path, "Block_data_", State,".rds"))
+
+# Now let's prepare the block-group data
+
+acs_vars <- c(Pop="B01001_001", # ACS population estimate
+              Med_inc="B19013_001", # median household income, blk grp
               Per_cap_inc="B19301_001", # Per capita income, blk grp
               Fam="B17010_001", # Families, blk grp
               Fam_in_poverty="B17010_002", # Families in poverty, blk grp
@@ -277,27 +301,64 @@ ACS <- get_acs(geography="block group",
                state=State,
                county=Counties,
                output="wide",
-               geometry=FALSE) 
+               geometry=TRUE) 
 
 ACS <- ACS %>% 
   mutate(Pct_poverty=100*Fam_in_povertyE/FamE) %>% 
-  select(GEOID, Med_inc=Med_incE, Per_cap_in=Per_cap_incE,
+  select(GEOID, Pop_acs=PopE, Med_inc=Med_incE, Per_cap_in=Per_cap_incE,
          Fam=FamE, Fam_in_poverty=Fam_in_povertyE, Aggreg_inc=Aggreg_incE,
          Pct_poverty, Households=HouseholdsE, Med_ageE=Med_ageE)
 
-All_BG <- All_BG %>% 
-  left_join(., ACS, by=join_by(Blk_grp==GEOID), 
-                  relationship="many-to-one") %>% 
-  relocate(T_pop, .after=Pop) %>% 
-  relocate(Depth, .after=T_pop)
+#   Consolidate data by block group
+
+All_BG2 <- All_BG %>% 
+  group_by(Depth, Blk_grp) %>% 
+    summarise(Pop_at_risk=first(T_pop),
+              Mean_depth=first(Mean_grp),
+              Fam_hou_at_risk=first(T_Fam_house),
+              Flood_pct=100*first(T_Num)/
+                (first(T_Num)+first(T_NumNA)),
+              Blocks=paste(sort(unique(GEOID)),collapse=", ")
+    ) %>% 
+  ungroup()
+
+#   Add block group stuff from ACS
+
+All_BG2 <- All_BG2 %>% 
+  left_join(., ACS, by=join_by(Blk_grp==GEOID)) %>% 
+  mutate(Pct_pop_at_risk=Pop_at_risk/Pop_acs)
   
+saveRDS(All_BG2, paste0(path, "Block_group_data_", State,".rds"))
   
 ```
 
 ##        Make some plots
 
 ```{r}
-foo3 %>% sf::st_drop_geometry() %>% 
+
+All_BG2 %>% 
+  mutate(Depth=as.numeric(Depth)) %>% 
+  filter(Depth>9.6) %>% 
+  ggplot(aes(x=Pct_poverty)) +
+  geom_histogram() +
+  labs(title="Poverty in Alabama in Census Blocks affected by Sea Level Rise",
+       x="Percent in Poverty",
+       y="Number of Census Blocks")
+
+All_BG2 %>% 
+  mutate(Depth=as.numeric(Depth)) %>% 
+  mutate(Pop_fraction=T_pop/Pop_acs) %>% #fraction of pop in flooding blocks
+  filter(Depth>9.6) %>% 
+  ggplot(aes(x=Pop_fraction)) +
+  geom_histogram(bins=20) +
+  labs(title="Fraction of Population in Census Blocks affected by Sea Level Rise within a Block Group",
+       subtitle="Alabama",
+       x="Fraction of block group population in affected blocks",
+       y="Number of Census Blocks")
+
+
+All_BG2 %>% 
+  mutate(Depth=as.numeric(Depth)) %>% 
   ggplot(aes(x=Flood_pct*100)) +
   geom_histogram() +
   facet_wrap(~ Depth, nrow=5) +
@@ -305,13 +366,23 @@ foo3 %>% sf::st_drop_geometry() %>%
        x="Percent of Census Block flooded",
        y="Number of Census Blocks")
 
-foo3 %>% sf::st_drop_geometry() %>% 
-  ggplot(aes(x=Flood_pct*100, y=Pop)) +
+All_BG2 %>% 
+  mutate(Depth=as.numeric(Depth)) %>% 
+  ggplot(aes(x=Flood_pct*100, y=Pop_blk)) +
   geom_point() +
   facet_wrap(~ Depth, nrow=5) +
   labs(title="Flooding in Alabama at different levels of sea level rise",
        x="Percent of Census Block flooded",
        y="Population of Census Blocks")
+
+All_BG2 %>% 
+  mutate(Depth=as.numeric(Depth)) %>% 
+  ggplot(aes(x=Flood_pct*100, y=Pct_poverty)) +
+  geom_point() +
+  facet_wrap(~ Depth, nrow=5) +
+  labs(title="Flooding in Alabama at different levels of sea level rise",
+       x="Percent of Census Block flooded",
+       y="Percent in Poverty in Census Blocks")
 
 
 
