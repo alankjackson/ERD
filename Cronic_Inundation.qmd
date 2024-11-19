@@ -19,15 +19,19 @@ googlecrs <- "EPSG:4326"
 # path <- "/home/ajackson/Dropbox/Rprojects/TexasDioceseCreationCare/Data/"
 Curated_path <- "/home/ajackson/Dropbox/Rprojects/Curated_Data_Files/"
 
+Local_test <- TRUE
+
 #   Directory where data is stored
 
 DataLocation <- "https://www.ajackson.org/ERD/"
 
-z <- url(paste0(DataLocation, "UCS_sfdata.rds"), method="libcurl")
-df <- readRDS(z)
-close(z)
-
-# df <- readRDS(paste0(Curated_path, "SeaLevel/UCS_sfdata.rds"))
+if ( Local_test ) {
+  df <- readRDS(paste0(Curated_path, "SeaLevel/UCS_sfdata.rds"))
+} else {
+  z <- url(paste0(DataLocation, "UCS_sfdata.rds"), method="libcurl")
+  df <- readRDS(z)
+  close(z)
+}
 
 Scenarios <- c("2030 High", "2045 High", "2060 High", 
                "2080 High", "2100 High", "2035 Intermediate", 
