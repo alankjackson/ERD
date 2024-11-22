@@ -265,10 +265,10 @@ All_BG <- left_join(foo, BG_stats, by=c("Depth", "Blk_grp"),
                   relationship="many-to-one") %>% 
   filter(Pop_blk>=25) %>%
   filter(Fam_house_blk>=5) %>%
-  mutate(Pop_pct=Pop_blk/T_pop) %>% 
-  mutate(Flood_pct=Num/(NumNA+Num)) %>% 
+  # mutate(Pop_pct=signif(100*Pop_blk/T_pop),2) %>% 
+  mutate(Flood_pct=signif(100*Num/(NumNA+Num),2)) %>% 
   # filter(Pop_pct>=0.05) %>%
-  filter(Flood_pct>=0.05)
+  filter(Flood_pct>=5)
 
 #   Final dataset to be saved by block
 
@@ -276,12 +276,15 @@ Block_geom <- All_stats2 %>%
   filter(Depth==10) %>% 
   select(GEOID, geometry)
 Block_data <- All_BG %>% 
+  mutate(Wmean=signif(Wmean, 1)) %>% 
   select(GEOID, Depth, NAME, Pop_blk, Wmean, Fam_house_blk,
-         NonFam_house_blk, Blk_grp, Pct_Pop_at_risk=Pop_pct, 
+         NonFam_house_blk, Blk_grp, 
+         # Pct_Pop_at_risk=Pop_pct, 
          Flood_pct)  
   #   Add geometry
 Block_data <- inner_join(Block_data, Block_geom, by=join_by(GEOID),
-                         relationship="many-to-one")
+                         relationship="many-to-one") %>% 
+  sf::st_as_sf()
 
 saveRDS(Block_data, paste0(path, "Block_data_", State,".rds"))
 
@@ -318,7 +321,8 @@ All_BG2 <- All_BG %>%
               Fam_hou_at_risk=first(T_Fam_house),
               Flood_pct=100*first(T_Num)/
                 (first(T_Num)+first(T_NumNA)),
-              Blocks=paste(sort(unique(GEOID)),collapse=", ")
+              Blocks=list(sort(unique(GEOID)))
+              # Blocks=paste(sort(unique(GEOID)),collapse=", ")
     ) %>% 
   ungroup()
 
@@ -326,7 +330,10 @@ All_BG2 <- All_BG %>%
 
 All_BG2 <- All_BG2 %>% 
   left_join(., ACS, by=join_by(Blk_grp==GEOID)) %>% 
-  mutate(Pct_pop_at_risk=Pop_at_risk/Pop_acs)
+  mutate(Pct_pop_at_risk=signif(100*Pop_at_risk/Pop_acs, 3)) %>% 
+  mutate(Pct_poverty=signif(Pct_poverty, 3)) %>% 
+  mutate(Mean_depth=signif(Mean_depth,3)) %>% 
+  sf::st_as_sf()
   
 saveRDS(All_BG2, paste0(path, "Block_group_data_", State,".rds"))
   
@@ -401,18 +408,16 @@ tmap::tm_shape(All_stats2 %>% filter(str_starts(GEOID, "010030114191001")) %>%
                                  filter(Depth==10)) + 
     #tmap::tm_sf(col="ConvoColor", alpha=0.3) +
   # tmap::tm_fill(title = "Threat", alpha=0.3, style="pretty") +
-  tmap::tm_polygons(alpha=0.3,
+  tmap::tm_polygons(alpha=0.5,
                     col="Mean",
                     palette = "Blues",
                     colorNA=NULL,
                     title = "10 feet sea level rise",
                     popup.vars=c("NAME",
                                  "Mean",
-                                 "Sum",
-                                 "Num",
-                                 "Max",
-                                 "Pop",
-                                 "Fam_house")
+                                 "Wmean",
+                                 "Pop_blk",
+                                 "Fam_house_blk")
                     )
 ```
 
@@ -422,23 +427,27 @@ tmap::tm_shape(All_stats2 %>% filter(str_starts(GEOID, "010030114191001")) %>%
 
 foo3 <- terra::rast(paste0(bigpath, "AL_slr_depth_10ft.tif_small.tif"))
 
-foo3 <- terra::crop(foo3, Blocks_dhc)
+foo3 <- terra::crop(foo3, sf::st_as_sf(Block_data))
 
-tmap::tmap_options(basemaps="OpenStreetMap")
+# tmap::tmap_options(basemaps="OpenStreetMap")
+tmap_options(basemap.server = c("OpenStreetMap"))
 
 tmap::tmap_mode("view") # set mode to interactive plots
 
 tmap::tm_shape(foo3) +
-  tmap::tm_raster(alpha=0.3,
-                  col="AL_slr_depth_10ft",
+  tmap::tm_raster(col_alpha=0.5,
+                  col.scale = tm_scale_categorical(n.max = 4, values = "brewer.blues",
+                                                   value.na = "red"),
+                  col.legend = tm_legend(title = "AL_slr_10ft"),
+                  # col.legend="AL_slr_depth_10ft",
                   # palette = "Blues",
-                  colorNA=NULL,
+                  value.na=NULL,
                   title = "foo3") +
 #  tmap_leaflet(
 #   tm_shape(foo3) +
 #   tm_raster(alpha = 0.3)
 # ) 
-  tmap::tm_shape(Blocks_dhc) +
-    tmap::tm_polygons(alpha=0.0)
+  tmap::tm_shape(Block_data %>% filter(Depth=="10")) +
+    tmap::tm_polygons(fill_alpha=0.0)
 ```
 
