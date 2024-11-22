@@ -92,11 +92,13 @@ dataset <- reactive({
 output$plot <- renderTmap({
   
   tmap::tmap_options(basemaps="OpenStreetMap")
+  # tmap::tmap_options(basemap.server = c("OpenStreetMap")) # tmap 4.0
   tmap_mode("view")
 
   dataset() %>%  
     tm_shape() +
-  tm_polygons("Poverty_pct", alpha=0.5, popup.vars=c("Zip", 
+  tm_polygons("Poverty_pct", alpha=0.5, popup.vars=c("Zip",
+  # tm_polygons("Poverty_pct", fill_alpha=0.5, popup.vars=c("Zip", #tmap 4.0
                                                      "State",
                                                      "Homes_Risk",
                                                      "Homes_ratio",
