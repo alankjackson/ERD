@@ -190,6 +190,8 @@ print(t2-t1)
     terra::gdalCache(size = 2000)
     foo <- prioritizr::intersecting_units(Blocks, df_tif)
     Blocks_trim <- Blocks[foo,]
+    Blocks_trim <- Blocks_trim %>% 
+      mutate(Raster=file)
     area_flag <- area
   }
 
