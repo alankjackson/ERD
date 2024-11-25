@@ -13,7 +13,8 @@ editor: source
 
 library(tidyverse)
 library(stringr)
-library(tmap)
+# library(tmap)
+library(leaflet)
 
 googlecrs <- "EPSG:4326"
 
@@ -30,8 +31,8 @@ Local_test <- TRUE
 DataLocation <- "https://www.ajackson.org/ERD/"
 
 if ( Local_test ) {
-  df_grp <- readRDS(paste0(Curated_path, "Block_group_data_AL.rds")) #%>% 
-    # sf::st_as_sf()
+  df_grp <- readRDS(paste0(Curated_path, "Block_group_data_AL.rds")) %>% 
+    sf::st_as_sf()
   df_blk <- readRDS(paste0(Curated_path, "Block_data_AL.rds")) #%>% 
     # sf::st_as_sf()
 } else {
@@ -42,14 +43,24 @@ if ( Local_test ) {
 
 Depths <- as.character((0:20)/2)
 
+States <- c("Alabama", "Florida", "Georgia", "Louisiana", "South Carolina",
+            "Texas")
+
 #   Round up to the nearest 5
 Max_poverty <- 5*round((max(df_grp$Pct_poverty)+2.5)/5)
 
+basemap <- leaflet() %>%
+  # add tiles
+  addProviderTiles("OpenStreetMap")
 ```
 
 # {.sidebar}
 
 ```{r}
+
+selectInput('State', 'Choose a state', States)
+
+br()
 
 sliderInput('Pct_poverty', '> % in Poverty', 
             min=5, max=Max_poverty,
@@ -91,7 +102,8 @@ selected in the data table will be highlighted on the map.
 # Plot
 
 ```{r}
-tmapOutput('map')
+# tmapOutput('map')
+leafletOutput('map')
 ```
 
 # Data
@@ -104,33 +116,20 @@ DT::dataTableOutput('data')
 ```{r}
 #| context: server
 
-# dataset <- reactive({
-  # if (input$Show_blks){
-  #   print(paste("line 93:", rv_map$Clicks))
-  #   df_blk %>% filter(Depth==input$Depth) %>% 
-  #     filter(stringr::str_detect(GEOID, paste0("^",rv_map$Clicks)))
-  # } else {
-  #   df_grp %>% filter(Depth==input$Depth) %>% 
-  #     filter(Pct_poverty>=input$Pct_poverty) %>% 
-  #     select(Blk_grp, Pop_at_risk, Fam_hou_at_risk, 
-  #            Mean_depth, Pct_pop_at_risk, Pct_poverty) %>% 
-  #     sf::st_as_sf()
-  # }
-# })
+#####   Subset data
 
 dataset_grp <- reactive({
   df_grp %>% filter(Depth==input$Depth) %>%
       filter(Pct_poverty>=input$Pct_poverty) #%>%
-    # filter(stringr::str_detect(GEOID, paste0("^",rv_map$Clicks)))
 })
-
-# Chosen_blks <- unlist(dataset_grp()$Blocks)
 
 dataset_blk <- reactive({
   df_blk %>% filter(Depth==input$Depth) %>%
     filter(GEOID %in% unlist(dataset_grp()[["Blocks"]]))
-    # filter(stringr::str_detect(GEOID, paste0("^",rv_map$Clicks)))
 })
+
+#####     end subsetting
+
 ###################################################################
   #     Debugging tool
   # observeEvent(input$map_shape_click, {
@@ -147,41 +146,71 @@ dataset_blk <- reactive({
 
 # output$map <- renderTmap({
 output$map <- leaflet::renderLeaflet({
+  foobar <- df_grp %>% sf::st_drop_geometry()
+  map <- basemap  
   
-  tmap::tmap_options(basemaps="OpenStreetMap")
-  # tmap::tmap_options(basemap.server = c("OpenStreetMap")) # tmap 4.0
-  tmap_mode("view")
-
-  print("--- here I am")
-  tm <-
-  tm_shape(dataset_grp()) +
-    tm_polygons("Pct_poverty", alpha=0.3,
-                popup.vars=c("Blk_grp",
-                             "Pop_at_risk",
-                             "Fam_hou_at_risk",
-                             "Mean_depth",
-                             "Pct_pop_at_risk",
-                             "Pct_poverty")) +
-      tm_dots(size=0.02) +
-  tm_shape(dataset_blk()) +
-    # tm_polygons("Pop_blk", alpha=0.3,
-    tm_polygons(input$Block_var, alpha=0.3, border.col="purple",
-                popup.vars=c("Block Name"="NAME",
-                             "Population"="Pop_blk",
-                             "Households"="Fam_house_blk",
-                             "Average Water Depth"="Wmean",
-                             # "Pct_Pop_at_risk",
-                             "Pct of Block flooded"="Flood_pct"))  
-  
-  if (length(rv_table$rows)>0) {
-    print(paste("--X--", dataset_grp()[rv_table$rows,]))
-    tm <- tm +
-    tm_shape(dataset_grp()[rv_table$rows,]) +
-      tm_borders(col="red", lwd=3) 
+  if (FALSE) { # show water
+  #   Add water grid
+  map <- map %>%  
+    addRasterImage(Crop_tif, colors = pal, opacity = 0.5) %>%
+    addLegend(pal = pal, values = terra::values(Crop_tif),
+    title = "Water Depth") 
   }
+  #   Block groups
+  map <- map %>%  
+    addPolygons(
+    data = dataset_grp(),
+    # color = "purple",
+    # set the opacity of the outline
+    opacity = 1,
+    # set the stroke width in pixels
+    weight = 1,
+    # set the fill opacity
+    fillOpacity = 0.0,
+    # labeling
+    label = paste(
+      "Pop at risk:", foobar$Pop_at_risk, "<br>",
+      "Homes at risk:", foobar$Fam_hou_at_risk, "<br>",
+      "Avg flood depth (ft):", foobar$Mean_depth, "<br>",
+      "% in poverty:", foobar$Pct_poverty
+    ) %>% 
+      lapply(htmltools::HTML)
+  )
   
-    tmap_leaflet(tm, in.shiny=TRUE) %>%
-    leaflet::hideGroup("dataset_blk()")
+  # tmap::tmap_options(basemaps="OpenStreetMap")
+  # # tmap::tmap_options(basemap.server = c("OpenStreetMap")) # tmap 4.0
+  # tmap_mode("view")
+  # 
+  # print("--- here I am")
+  # tm <-
+  # tm_shape(dataset_grp()) +
+  #   tm_polygons("Pct_poverty", alpha=0.3,
+  #               popup.vars=c("Blk_grp",
+  #                            "Pop_at_risk",
+  #                            "Fam_hou_at_risk",
+  #                            "Mean_depth",
+  #                            "Pct_pop_at_risk",
+  #                            "Pct_poverty")) +
+  #     tm_dots(size=0.02) +
+  # tm_shape(dataset_blk()) +
+  #   # tm_polygons("Pop_blk", alpha=0.3,
+  #   tm_polygons(input$Block_var, alpha=0.3, border.col="purple",
+  #               popup.vars=c("Block Name"="NAME",
+  #                            "Population"="Pop_blk",
+  #                            "Households"="Fam_house_blk",
+  #                            "Average Water Depth"="Wmean",
+  #                            # "Pct_Pop_at_risk",
+  #                            "Pct of Block flooded"="Flood_pct"))  
+  # 
+  # if (length(rv_table$rows)>0) {
+  #   print(paste("--X--", dataset_grp()[rv_table$rows,]))
+  #   tm <- tm +
+  #   tm_shape(dataset_grp()[rv_table$rows,]) +
+  #     tm_borders(col="red", lwd=3) 
+  # }
+  # 
+  #   tmap_leaflet(tm, in.shiny=TRUE) %>%
+  #   leaflet::hideGroup("dataset_blk()")
   
 })
 
