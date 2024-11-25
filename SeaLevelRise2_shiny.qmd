@@ -1,0 +1,221 @@
+---
+title: "SeaLevelRise_shiny"
+author: "Alan Jackson"
+format: dashboard
+server: shiny
+editor: source
+---
+
+
+```{r}
+#| context: setup
+### #| include: false
+
+library(tidyverse)
+library(stringr)
+library(tmap)
+
+googlecrs <- "EPSG:4326"
+
+# path <- "/home/ajackson/Dropbox/Rprojects/TexasDioceseCreationCare/Data/"
+# Curated_path <- "/home/ajackson/Dropbox/Rprojects/Curated_Data_Files/"
+Curated_path <- "/home/ajackson/Dropbox/Rprojects/ERD/SeaLevel/"
+
+Google_notes <- "https://docs.google.com/document/d/1ZYLhbcxoM2DShvo-eewVF4UHyNHtJVhjPB6KRr6JFI4/edit?usp=sharing"
+
+Local_test <- TRUE
+
+#   Directory where data is stored
+
+DataLocation <- "https://www.ajackson.org/ERD/"
+
+if ( Local_test ) {
+  df_grp <- readRDS(paste0(Curated_path, "Block_group_data_AL.rds")) #%>% 
+    # sf::st_as_sf()
+  df_blk <- readRDS(paste0(Curated_path, "Block_data_AL.rds")) #%>% 
+    # sf::st_as_sf()
+} else {
+  z <- url(paste0(DataLocation, "UCS_sfdata.rds"), method="libcurl")
+  df_grp <- readRDS(z)
+  close(z)
+}
+
+Depths <- as.character((0:20)/2)
+
+#   Round up to the nearest 5
+Max_poverty <- 5*round((max(df_grp$Pct_poverty)+2.5)/5)
+
+```
+
+# {.sidebar}
+
+```{r}
+
+sliderInput('Pct_poverty', '> % in Poverty', 
+            min=5, max=Max_poverty,
+            # min=5, max=100,
+            value=10, 
+            step=5, round=0)
+br()
+
+selectInput('Depth', 'Sea Level Rise (ft)', Depths)
+
+br()
+
+#   choose variable to color blocks with
+radioButtons("Block_var", "Color Blocks by:",
+             c("Population"="Pop_blk",
+               "Avg Flood Depth"="Wmean",
+               "Households"="Fam_house_blk",
+               "% Block Flooded"="Flood_pct"))
+# 
+# checkboxInput('Show_blks', 'Show Blocks on mouse click', value=FALSE)
+
+```
+
+Data from NOAA Sea Level Rise datasets plus the 2020 ACS 
+census data.
+
+Note that Percent Poverty applies to those blocks at risk for a given value of
+sea level rise - so for small rises in sea level and high poverty values, there
+will be no blocks appearing.
+
+Blocks are turned off by default. Use the layer tool in the upper left corner
+to control which layer is visible.
+
+Note that the visible data is also shown as a table in the Data tab. Rows
+selected in the data table will be highlighted on the map.
+
+[Documentation](https://docs.google.com/document/d/1ZYLhbcxoM2DShvo-eewVF4UHyNHtJVhjPB6KRr6JFI4/edit?usp=sharing)
+
+# Plot
+
+```{r}
+tmapOutput('map')
+```
+
+# Data
+
+```{r}
+# tableOutput('data')
+DT::dataTableOutput('data')
+```
+
+```{r}
+#| context: server
+
+# dataset <- reactive({
+  # if (input$Show_blks){
+  #   print(paste("line 93:", rv_map$Clicks))
+  #   df_blk %>% filter(Depth==input$Depth) %>% 
+  #     filter(stringr::str_detect(GEOID, paste0("^",rv_map$Clicks)))
+  # } else {
+  #   df_grp %>% filter(Depth==input$Depth) %>% 
+  #     filter(Pct_poverty>=input$Pct_poverty) %>% 
+  #     select(Blk_grp, Pop_at_risk, Fam_hou_at_risk, 
+  #            Mean_depth, Pct_pop_at_risk, Pct_poverty) %>% 
+  #     sf::st_as_sf()
+  # }
+# })
+
+dataset_grp <- reactive({
+  df_grp %>% filter(Depth==input$Depth) %>%
+      filter(Pct_poverty>=input$Pct_poverty) #%>%
+    # filter(stringr::str_detect(GEOID, paste0("^",rv_map$Clicks)))
+})
+
+# Chosen_blks <- unlist(dataset_grp()$Blocks)
+
+dataset_blk <- reactive({
+  df_blk %>% filter(Depth==input$Depth) %>%
+    filter(GEOID %in% unlist(dataset_grp()[["Blocks"]]))
+    # filter(stringr::str_detect(GEOID, paste0("^",rv_map$Clicks)))
+})
+###################################################################
+  #     Debugging tool
+  # observeEvent(input$map_shape_click, {
+  #     click <- input$map_shape_click
+  #     print(paste("--1--", unlist(dataset_grp()[["Blocks"]]))) 
+  #     # print(paste("--2--", unlist(dataset_grp()[["Blocks"]]))
+  # }) #END OBSERVE EVENT
+  observeEvent(input$data_rows_selected, {
+      rows <- input$data_rows_selected
+      print(paste("--1--", rows))
+      # print(paste("--2--", unlist(dataset_grp()[["Blocks"]]))
+  }) #END OBSERVE EVENT
+###################################################################
+
+# output$map <- renderTmap({
+output$map <- leaflet::renderLeaflet({
+  
+  tmap::tmap_options(basemaps="OpenStreetMap")
+  # tmap::tmap_options(basemap.server = c("OpenStreetMap")) # tmap 4.0
+  tmap_mode("view")
+
+  print("--- here I am")
+  tm <-
+  tm_shape(dataset_grp()) +
+    tm_polygons("Pct_poverty", alpha=0.3,
+                popup.vars=c("Blk_grp",
+                             "Pop_at_risk",
+                             "Fam_hou_at_risk",
+                             "Mean_depth",
+                             "Pct_pop_at_risk",
+                             "Pct_poverty")) +
+      tm_dots(size=0.02) +
+  tm_shape(dataset_blk()) +
+    # tm_polygons("Pop_blk", alpha=0.3,
+    tm_polygons(input$Block_var, alpha=0.3, border.col="purple",
+                popup.vars=c("Block Name"="NAME",
+                             "Population"="Pop_blk",
+                             "Households"="Fam_house_blk",
+                             "Average Water Depth"="Wmean",
+                             # "Pct_Pop_at_risk",
+                             "Pct of Block flooded"="Flood_pct"))  
+  
+  if (length(rv_table$rows)>0) {
+    print(paste("--X--", dataset_grp()[rv_table$rows,]))
+    tm <- tm +
+    tm_shape(dataset_grp()[rv_table$rows,]) +
+      tm_borders(col="red", lwd=3) 
+  }
+  
+    tmap_leaflet(tm, in.shiny=TRUE) %>%
+    leaflet::hideGroup("dataset_blk()")
+  
+})
+
+  # reactive values for map
+  # rv_map <-reactiveValues(Clicks=list())
+  # 
+  # observeEvent(input$map_shape_click, {
+  #     click <- input$map_shape_click
+  #     # print(paste("--1--",str(click)))
+  #     # rv_map$Clicks<-c(rv_map$Clicks, click$id)
+  #     # rv_map$Clicks <- stringr::str_extract(rv_map$Clicks, "\\d+$")
+  #   if (!input$Show_blks){ # only if in group mode
+  #       rv_map$Clicks <- stringr::str_extract(click$id, "\\d+$")
+  #       print(paste("--2--", rv_map$Clicks))
+  #   }
+  # }) #END OBSERVE EVENT
+
+# output$data <- renderTable({
+output$data <- DT::renderDataTable({
+  dataset_grp() %>% sf::st_drop_geometry()} %>% 
+    select(Blk_grp, Pop_at_risk, Fam_hou_at_risk, Mean_depth, 
+           Pct_pop_at_risk, Pct_poverty),
+  colnames=c("Block Grp", 
+             "Pop at Risk", 
+             "Homes at Risk", 
+             "Mean flood depth", 
+             "% Pop at risk",
+             "% Poverty")
+)
+
+rv_table <-reactiveValues(rows=list())
+
+observeEvent(input$data_rows_selected, ignoreNULL = FALSE, {
+    rv_table$rows <- input$data_rows_selected
+}) #END OBSERVE EVENT
+
+```
