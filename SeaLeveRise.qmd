@@ -35,7 +35,7 @@ NOAAcrs <- "EPSG:4269"
 path <- "/home/ajackson/Dropbox/Rprojects/ERD/SeaLevel/"
 Curated_path <- "/home/ajackson/Dropbox/Rprojects/Curated_Data_Files/"
 mirror <- "/home/ajackson/Dropbox/mirrors/ajackson/ERD/"
-bigpath <- "/media/ajackson/ExtraDrive1/SeaLevel/"
+bigpath <- "/media/ajackson/extradrive1/SeaLevel/"
 
 ############    function
 
@@ -92,7 +92,7 @@ Note: the grids are in EPSG:4269
 Census polygons are NAD83, EPSG:4269
 
 ```{r}
-State <- "LA"
+State <- "SC"
 # Get blocks for State
 
 #     P16_002N  !!Total:!!Family households:
@@ -187,7 +187,7 @@ print(t2-t1)
   
   if (area_flag != area) {
     print("Trim")
-    terra::gdalCache(size = 2000)
+    terra::gdalCache(size = 4000)
     foo <- prioritizr::intersecting_units(Blocks, df_tif)
     Blocks_trim <- Blocks[foo,]
     Blocks_trim <- Blocks_trim %>% 
@@ -219,8 +219,6 @@ print(t2-t1)
 All_stats <- readRDS(paste0(path, "All_stats_", State,".rds"))
 
 All_stats2 <- All_stats %>% 
-  rename(Pop_blk=Pop, Fam_house_blk=Fam_house,
-         NonFam_house_blk=NonFam_house) %>% 
   filter(Pop_blk>0) #   don't care if no one lives there
 
 All_stats2 %>% filter(Pop_blk<100) %>% 
@@ -236,13 +234,15 @@ foo <- All_stats2 %>%
               Wmean=max(Wmean),
               Wvaluesum=sum(Wvaluesum),
               Weights=sum(Weights),
+              # Raster=list(unique(Raster)),
+              Raster=paste(unique(Raster), collapse=","),
               Fam_house_blk=first(Fam_house_blk),
               NonFam_house_blk=first(NonFam_house_blk),
               NumNA=sum(NumNA),
               Num=sum(Num)) %>% 
   ungroup()
 
-#     And none were found!
+#     And some were found - blocks that get cut by sea level tiles
 
 #     Calculate Block-Groups
 
@@ -258,6 +258,7 @@ BG_stats <- foo %>%
               T_NonFam_house=sum(NonFam_house_blk),
               T_Num=sum(Num),
               T_NumNA=sum(NumNA),
+              Raster=paste(unique(Raster, collapse=",")),
               Num_blks=n(),
               Mean_grp=sum(Wvaluesum)/sum(Weights)
               )
