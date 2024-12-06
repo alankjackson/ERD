@@ -269,25 +269,29 @@ BG_stats <- foo %>%
 
 All_BG <- left_join(foo, BG_stats, by=c("Depth", "Blk_grp"), 
                   relationship="many-to-one") %>% 
+  select(!starts_with("Raster")) %>% 
   filter(Pop_blk>=25) %>%
   filter(Fam_house_blk>=5) %>%
-  # mutate(Pop_pct=signif(100*Pop_blk/T_pop),2) %>% 
   mutate(Flood_pct=signif(100*Num/(NumNA+Num),2)) %>% 
-  # filter(Pop_pct>=0.05) %>%
   filter(Flood_pct>=5)
 
 #   Final dataset to be saved by block
 
 Block_geom <- All_stats2 %>% 
   filter(Depth==10) %>% 
+  group_by(GEOID) %>% 
+    summarise(GEOID=first(GEOID)) %>% 
+  ungroup() %>% 
   select(GEOID, geometry)
+
 Block_data <- All_BG %>% 
   mutate(Wmean=signif(Wmean, 1)) %>% 
   select(GEOID, Depth, NAME, Pop_blk, Wmean, Fam_house_blk,
          NonFam_house_blk, Blk_grp, 
-         # Pct_Pop_at_risk=Pop_pct, 
          Flood_pct)  
+
   #   Add geometry
+
 Block_data <- inner_join(Block_data, Block_geom, by=join_by(GEOID),
                          relationship="many-to-one") %>% 
   sf::st_as_sf()
@@ -295,6 +299,7 @@ Block_data <- inner_join(Block_data, Block_geom, by=join_by(GEOID),
 saveRDS(Block_data, paste0(path, "Block_data_", State,".rds"))
 
 # Now let's prepare the block-group data
+############################################# stopped here
 
 acs_vars <- c(Pop="B01001_001", # ACS population estimate
               Med_inc="B19013_001", # median household income, blk grp
