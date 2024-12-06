@@ -33,8 +33,8 @@ DataLocation <- "https://www.ajackson.org/ERD/"
 if ( Local_test ) {
   df_grp <- readRDS(paste0(Curated_path, "Block_group_data_AL.rds")) %>% 
     sf::st_as_sf()
-  df_blk <- readRDS(paste0(Curated_path, "Block_data_AL.rds")) #%>% 
-    # sf::st_as_sf()
+  df_blk <- readRDS(paste0(Curated_path, "Block_data_AL.rds")) %>% 
+    sf::st_as_sf()
 } else {
   z <- url(paste0(DataLocation, "UCS_sfdata.rds"), method="libcurl")
   df_grp <- readRDS(z)
@@ -45,13 +45,16 @@ Depths <- as.character((0:20)/2)
 
 States <- c("Alabama", "Florida", "Georgia", "Louisiana", "South Carolina",
             "Texas")
+State_abbr <- c("AL", "FL", "GA", "LA", "SC", "TX")
+
+State_df <- as_tibble(cbind(States, State_abbr))
 
 #   Round up to the nearest 5
 Max_poverty <- 5*round((max(df_grp$Pct_poverty)+2.5)/5)
 
-basemap <- leaflet() %>%
-  # add tiles
-  addProviderTiles("OpenStreetMap")
+# basemap <- leaflet() %>%
+#   # add tiles
+#   addProviderTiles("OpenStreetMap")
 ```
 
 # {.sidebar}
@@ -116,15 +119,37 @@ DT::dataTableOutput('data')
 ```{r}
 #| context: server
 
+#####   Load in a new state
+
+df_grp <- reactive({
+  if ( Local_test ) {
+    i <- which(State_df$States==input$State)
+  readRDS(paste0(Curated_path,
+                 paste0("Block_group_data_",State_df$State_abbr[i] ,".rds"))) %>%
+    sf::st_as_sf()
+  }
+})
+
+df_blk <- reactive({
+  if ( Local_test ) {
+    i <- which(State_df$States==input$State)
+  readRDS(paste0(Curated_path,
+                 paste0("Block_data_",State_df$State_abbr[i] ,".rds"))) %>%
+    sf::st_as_sf()
+  }
+})
+
 #####   Subset data
 
 dataset_grp <- reactive({
-  df_grp %>% filter(Depth==input$Depth) %>%
+  foo <- df_grp() %>% filter(Depth==input$Depth) %>%
       filter(Pct_poverty>=input$Pct_poverty) #%>%
+  print(paste("df_grp", nrow(foo)))
+  foo
 })
 
 dataset_blk <- reactive({
-  df_blk %>% filter(Depth==input$Depth) %>%
+  df_blk() %>% filter(Depth==input$Depth) %>%
     filter(GEOID %in% unlist(dataset_grp()[["Blocks"]]))
 })
 
@@ -146,36 +171,66 @@ dataset_blk <- reactive({
 
 # output$map <- renderTmap({
 output$map <- leaflet::renderLeaflet({
-  foobar <- df_grp %>% sf::st_drop_geometry()
-  map <- basemap  
+  Grp_data <- dataset_grp() %>% sf::st_drop_geometry()
+  Blk_data <- dataset_blk() %>% sf::st_drop_geometry()
+  print(paste("Grp data", nrow(Grp_data)))
+  # map <- basemap
   
   if (FALSE) { # show water
   #   Add water grid
-  map <- map %>%  
+  map <- map %>%
     addRasterImage(Crop_tif, colors = pal, opacity = 0.5) %>%
     addLegend(pal = pal, values = terra::values(Crop_tif),
     title = "Water Depth") 
   }
-  #   Block groups
-  map <- map %>%  
-    addPolygons(
-    data = dataset_grp(),
+  #   Block groups and blocks
+  # map <- map %>%
+  leaflet() %>% 
+    addTiles() %>% 
+    addPolygons(  # block groups
+    data = sf::st_transform(dataset_grp(), crs=googlecrs),
+    #   Layer name
+    group = "Block Grps",
     # color = "purple",
     # set the opacity of the outline
-    opacity = 1,
+    opacity = 0.2,
     # set the stroke width in pixels
     weight = 1,
     # set the fill opacity
-    fillOpacity = 0.0,
+    fillOpacity = 0.1,
     # labeling
-    label = paste(
-      "Pop at risk:", foobar$Pop_at_risk, "<br>",
-      "Homes at risk:", foobar$Fam_hou_at_risk, "<br>",
-      "Avg flood depth (ft):", foobar$Mean_depth, "<br>",
-      "% in poverty:", foobar$Pct_poverty
-    ) %>% 
-      lapply(htmltools::HTML)
-  )
+    popup = paste(
+      "Pop at risk:", Grp_data$Pop_at_risk, "<br>",
+      "Homes at risk:", Grp_data$Fam_hou_at_risk, "<br>",
+      "Avg flood depth (ft):", Grp_data$Mean_depth, "<br>",
+      "% in poverty:", Grp_data$Pct_poverty
+      ) #%>%
+        # lapply(htmltools::HTML)
+  ) #%>% 
+  #   addPolygons( #      Blocks
+  #   data = dataset_blk(),
+  #   group = "Blocks",
+  #   color = "purple",
+  #   # set the opacity of the outline
+  #   # opacity = 1,
+  #   # set the stroke width in pixels
+  #   weight = 1,
+  #   # set the fill opacity
+  #   fillOpacity = 0.4,
+  #   # labeling
+  #   label = paste(
+  #     "Block Name:", Blk_data$NAME, "<br>",
+  #     "Population:", Blk_data$Pop_blk, "<br>",
+  #     "Households:", Blk_data$Fam_house_blk, "<br>",
+  #     "Average Water Depth:", Blk_data$Wmean, "<br>",
+  #     "Pct of Block flooded:", Blk_data$Flood_pct
+  #   ) %>% 
+  #     lapply(htmltools::HTML)
+  # ) %>% 
+  #   addLayersControl(overlayGroups = c("Block Grps", "Blocks"), 
+  #                  options = layersControlOptions(collapsed=F)) %>% 
+  #   hideGroup("Blocks")
+  # 
   
   # tmap::tmap_options(basemaps="OpenStreetMap")
   # # tmap::tmap_options(basemap.server = c("OpenStreetMap")) # tmap 4.0
