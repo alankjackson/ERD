@@ -258,7 +258,8 @@ BG_stats <- foo %>%
               T_NumNA=sum(NumNA),
               Raster=paste(Raster, collapse=","),
               Num_blks=n(),
-              Mean_grp=sum(Wvaluesum)/sum(Weights)
+              Mean_grp=sum(Wvaluesum)/sum(Weights),
+              Blocks=list(sort(unique(GEOID)))
               ) %>% 
   mutate(Raster=paste( # clean up filename list
                  unique(
@@ -269,7 +270,8 @@ BG_stats <- foo %>%
 
 All_BG <- left_join(foo, BG_stats, by=c("Depth", "Blk_grp"), 
                   relationship="many-to-one") %>% 
-  select(!starts_with("Raster")) %>% 
+  select(!starts_with("Raster")) %>%
+  select(!Blocks) %>% 
   filter(Pop_blk>=25) %>%
   filter(Fam_house_blk>=5) %>%
   mutate(Flood_pct=signif(100*Num/(NumNA+Num),2)) %>% 
@@ -299,7 +301,6 @@ Block_data <- inner_join(Block_data, Block_geom, by=join_by(GEOID),
 saveRDS(Block_data, paste0(path, "Block_data_", State,".rds"))
 
 # Now let's prepare the block-group data
-############################################# stopped here
 
 acs_vars <- c(Pop="B01001_001", # ACS population estimate
               Med_inc="B19013_001", # median household income, blk grp
@@ -325,14 +326,15 @@ ACS <- ACS %>%
 
 #   Consolidate data by block group
 
-All_BG2 <- All_BG %>% 
+# All_BG2 <- All_BG %>% 
+All_BG2 <- BG_stats %>% 
   group_by(Depth, Blk_grp) %>% 
     summarise(Pop_at_risk=first(T_pop),
               Mean_depth=first(Mean_grp),
               Fam_hou_at_risk=first(T_Fam_house),
               Flood_pct=100*first(T_Num)/
                 (first(T_Num)+first(T_NumNA)),
-              Blocks=list(sort(unique(GEOID)))
+              Blocks=list(sort(unique(unlist(Blocks))))
               # Blocks=paste(sort(unique(GEOID)),collapse=", ")
     ) %>% 
   ungroup()
@@ -365,7 +367,7 @@ All_BG2 %>%
 
 All_BG2 %>% 
   mutate(Depth=as.numeric(Depth)) %>% 
-  mutate(Pop_fraction=T_pop/Pop_acs) %>% #fraction of pop in flooding blocks
+  mutate(Pop_fraction=Pop_at_risk/Pop_acs) %>% #fraction of pop in flooding blocks
   filter(Depth>9.6) %>% 
   ggplot(aes(x=Pop_fraction)) +
   geom_histogram(bins=20) +
@@ -377,7 +379,7 @@ All_BG2 %>%
 
 All_BG2 %>% 
   mutate(Depth=as.numeric(Depth)) %>% 
-  ggplot(aes(x=Flood_pct*100)) +
+  ggplot(aes(x=Flood_pct)) +
   geom_histogram() +
   facet_wrap(~ Depth, nrow=5) +
   labs(title="Flooding in Alabama at different levels of sea level rise",
@@ -386,7 +388,7 @@ All_BG2 %>%
 
 All_BG2 %>% 
   mutate(Depth=as.numeric(Depth)) %>% 
-  ggplot(aes(x=Flood_pct*100, y=Pop_blk)) +
+  ggplot(aes(x=Flood_pct, y=Pop_acs)) +
   geom_point() +
   facet_wrap(~ Depth, nrow=5) +
   labs(title="Flooding in Alabama at different levels of sea level rise",
@@ -395,7 +397,7 @@ All_BG2 %>%
 
 All_BG2 %>% 
   mutate(Depth=as.numeric(Depth)) %>% 
-  ggplot(aes(x=Flood_pct*100, y=Pct_poverty)) +
+  ggplot(aes(x=Flood_pct, y=Pct_poverty)) +
   geom_point() +
   facet_wrap(~ Depth, nrow=5) +
   labs(title="Flooding in Alabama at different levels of sea level rise",
