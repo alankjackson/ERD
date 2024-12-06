@@ -92,7 +92,7 @@ Note: the grids are in EPSG:4269
 Census polygons are NAD83, EPSG:4269
 
 ```{r}
-State <- "SC"
+State <- "LA"
 # Get blocks for State
 
 #     P16_002N  !!Total:!!Family households:
@@ -229,18 +229,16 @@ All_stats2 %>% filter(Pop_blk<100) %>%
 foo <- All_stats2 %>% 
   sf::st_drop_geometry() %>% # geometry can be the only difference
   group_by(GEOID, Depth) %>% 
-    summarise(NAME=first(NAME),
+      reframe(NAME=first(NAME),
               Pop_blk=first(Pop_blk),
               Wmean=max(Wmean),
               Wvaluesum=sum(Wvaluesum),
               Weights=sum(Weights),
-              # Raster=list(unique(Raster)),
               Raster=paste(unique(Raster), collapse=","),
               Fam_house_blk=first(Fam_house_blk),
               NonFam_house_blk=first(NonFam_house_blk),
               NumNA=sum(NumNA),
-              Num=sum(Num)) %>% 
-  ungroup()
+              Num=sum(Num))  
 
 #     And some were found - blocks that get cut by sea level tiles
 
@@ -258,10 +256,14 @@ BG_stats <- foo %>%
               T_NonFam_house=sum(NonFam_house_blk),
               T_Num=sum(Num),
               T_NumNA=sum(NumNA),
-              Raster=paste(unique(Raster, collapse=",")),
+              Raster=paste(Raster, collapse=","),
               Num_blks=n(),
               Mean_grp=sum(Wvaluesum)/sum(Weights)
-              )
+              ) %>% 
+  mutate(Raster=paste( # clean up filename list
+                 unique(
+                  unlist(
+                   str_split(Raster, pattern=','))), collapse = ","))  
 
 #   Join block group stats to block dataframe and calculate more stuff and filter
 
