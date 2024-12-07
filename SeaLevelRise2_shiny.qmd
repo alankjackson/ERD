@@ -16,6 +16,8 @@ library(stringr)
 # library(tmap)
 library(leaflet)
 
+shiny::devmode(TRUE)
+
 googlecrs <- "EPSG:4326"
 
 # path <- "/home/ajackson/Dropbox/Rprojects/TexasDioceseCreationCare/Data/"
@@ -144,8 +146,6 @@ df_blk <- reactive({
 dataset_grp <- reactive({
   foo <- df_grp() %>% filter(Depth==input$Depth) %>%
       filter(Pct_poverty>=input$Pct_poverty) #%>%
-  print(paste("df_grp", nrow(foo)))
-  foo
 })
 
 dataset_blk <- reactive({
@@ -173,7 +173,6 @@ dataset_blk <- reactive({
 output$map <- leaflet::renderLeaflet({
   Grp_data <- dataset_grp() %>% sf::st_drop_geometry()
   Blk_data <- dataset_blk() %>% sf::st_drop_geometry()
-  print(paste("Grp data", nrow(Grp_data)))
   # map <- basemap
   
   if (FALSE) { # show water
@@ -185,52 +184,46 @@ output$map <- leaflet::renderLeaflet({
   }
   #   Block groups and blocks
   # map <- map %>%
-  leaflet() %>% 
+  map <- leaflet() %>% 
     addTiles() %>% 
     addPolygons(  # block groups
     data = sf::st_transform(dataset_grp(), crs=googlecrs),
-    #   Layer name
     group = "Block Grps",
-    # color = "purple",
-    # set the opacity of the outline
     opacity = 0.2,
-    # set the stroke width in pixels
     weight = 1,
-    # set the fill opacity
-    fillOpacity = 0.1,
-    # labeling
+    fillOpacity = 0.2,
     popup = paste(
       "Pop at risk:", Grp_data$Pop_at_risk, "<br>",
       "Homes at risk:", Grp_data$Fam_hou_at_risk, "<br>",
       "Avg flood depth (ft):", Grp_data$Mean_depth, "<br>",
       "% in poverty:", Grp_data$Pct_poverty
-      ) #%>%
-        # lapply(htmltools::HTML)
-  ) #%>% 
-  #   addPolygons( #      Blocks
-  #   data = dataset_blk(),
-  #   group = "Blocks",
-  #   color = "purple",
-  #   # set the opacity of the outline
-  #   # opacity = 1,
-  #   # set the stroke width in pixels
-  #   weight = 1,
-  #   # set the fill opacity
-  #   fillOpacity = 0.4,
-  #   # labeling
-  #   label = paste(
-  #     "Block Name:", Blk_data$NAME, "<br>",
-  #     "Population:", Blk_data$Pop_blk, "<br>",
-  #     "Households:", Blk_data$Fam_house_blk, "<br>",
-  #     "Average Water Depth:", Blk_data$Wmean, "<br>",
-  #     "Pct of Block flooded:", Blk_data$Flood_pct
-  #   ) %>% 
-  #     lapply(htmltools::HTML)
-  # ) %>% 
-  #   addLayersControl(overlayGroups = c("Block Grps", "Blocks"), 
-  #                  options = layersControlOptions(collapsed=F)) %>% 
-  #   hideGroup("Blocks")
-  # 
+      )
+  ) %>% 
+    addPolygons( #      Blocks
+    data = dataset_blk(),
+    group = "Blocks",
+    color = "purple",
+    # opacity = 1,
+    weight = 1,
+    fillOpacity = 0.2,
+    popup = paste(
+      "Block Name:", Blk_data$NAME, "<br>",
+      "Population:", Blk_data$Pop_blk, "<br>",
+      "Households:", Blk_data$Fam_house_blk, "<br>",
+      "Average Water Depth:", Blk_data$Wmean, "<br>",
+      "Pct of Block flooded:", Blk_data$Flood_pct
+  ) %>%
+    addLayersControl(overlayGroups = c("Block Grps", "Blocks"),
+                   options = layersControlOptions(collapsed=F)) %>%
+    hideGroup("Blocks")
+  
+  if (length(rv_table$rows)>0) {
+    print(paste("--X--", dataset_grp()[rv_table$rows,]))
+    map <- map %>% 
+    addPolylines(data=dataset_grp()[rv_table$rows,], 
+                 color="red", 
+                 weight=3)
+  }
   
   # tmap::tmap_options(basemaps="OpenStreetMap")
   # # tmap::tmap_options(basemap.server = c("OpenStreetMap")) # tmap 4.0
