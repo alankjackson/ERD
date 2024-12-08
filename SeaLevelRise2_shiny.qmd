@@ -7,7 +7,7 @@ editor: source
 ---
 
 
-```{r}
+```{r setup}
 #| context: setup
 ### #| include: false
 
@@ -38,7 +38,7 @@ if ( Local_test ) {
   df_blk <- readRDS(paste0(Curated_path, "Block_data_AL.rds")) %>% 
     sf::st_as_sf()
 } else {
-  z <- url(paste0(DataLocation, "UCS_sfdata.rds"), method="libcurl")
+  # z <- url(paste0(DataLocation, "UCS_sfdata.rds"), method="libcurl")
   df_grp <- readRDS(z)
   close(z)
 }
@@ -52,7 +52,7 @@ State_abbr <- c("AL", "FL", "GA", "LA", "SC", "TX")
 State_df <- as_tibble(cbind(States, State_abbr))
 
 #   Round up to the nearest 5
-Max_poverty <- 5*round((max(df_grp$Pct_poverty)+2.5)/5)
+Max_poverty <- 5*round((max(df_grp$Pct_poverty, na.rm=TRUE)+2.5)/5)
 
 # basemap <- leaflet() %>%
 #   # add tiles
@@ -61,7 +61,7 @@ Max_poverty <- 5*round((max(df_grp$Pct_poverty)+2.5)/5)
 
 # {.sidebar}
 
-```{r}
+```{r sidebar}
 
 selectInput('State', 'Choose a state', States)
 
@@ -118,26 +118,28 @@ leafletOutput('map')
 DT::dataTableOutput('data')
 ```
 
-```{r}
+```{r server}
 #| context: server
 
 #####   Load in a new state
 
 df_grp <- reactive({
+    print("============   read in grp data ==============")
   if ( Local_test ) {
     i <- which(State_df$States==input$State)
+    #     Read block-group data off disk
   readRDS(paste0(Curated_path,
-                 paste0("Block_group_data_",State_df$State_abbr[i] ,".rds"))) %>%
-    sf::st_as_sf()
+                 paste0("Block_group_data_",State_df$State_abbr[i] ,".rds")))
   }
 })
 
 df_blk <- reactive({
+    print("============   read in blk data ==============")
   if ( Local_test ) {
     i <- which(State_df$States==input$State)
+    #     Read block data off disk
   readRDS(paste0(Curated_path,
-                 paste0("Block_data_",State_df$State_abbr[i] ,".rds"))) %>%
-    sf::st_as_sf()
+                 paste0("Block_data_",State_df$State_abbr[i] ,".rds")))
   }
 })
 
@@ -145,12 +147,22 @@ df_blk <- reactive({
 
 dataset_grp <- reactive({
   foo <- df_grp() %>% filter(Depth==input$Depth) %>%
-      filter(Pct_poverty>=input$Pct_poverty) #%>%
+      filter(Pct_poverty>=input$Pct_poverty)
+  # print(paste("dataset_grp:", foo %>% filter(Blk_grp=="010030109071")))
+  foo
 })
 
 dataset_blk <- reactive({
-  df_blk() %>% filter(Depth==input$Depth) %>%
+  foo <- df_blk() %>% filter(Depth==input$Depth) %>%
     filter(GEOID %in% unlist(dataset_grp()[["Blocks"]]))
+  # print(paste(foo$GEOID, foo$Blk_grp))
+  # foo2 <- df_blk() %>% filter(Blk_grp=="010030109071") %>% sf::st_drop_geometry()
+  # foo3 <- foo2 %>% filter(Depth==input$Depth)
+  # foo4 <- foo3 %>% filter(GEOID %in% unlist(dataset_grp()[["Blocks"]]))
+  # print(paste("dataset_blk 1:", foo2))
+  # print(paste("dataset_blk 2:", foo3))
+  # print(paste("dataset_blk 3:", foo4))
+  foo
 })
 
 #####     end subsetting
@@ -167,11 +179,19 @@ dataset_blk <- reactive({
       print(paste("--1--", rows))
       # print(paste("--2--", unlist(dataset_grp()[["Blocks"]]))
   }) #END OBSERVE EVENT
+    #click on polygon
+    observe({ 
+        event <- input$map_shape_click
+        print(paste("Blk_grp:", event$id))
+        print(dataset_grp() %>% filter(Blk_grp=="event$id"))
+        
+    })
 ###################################################################
 
 # output$map <- renderTmap({
 output$map <- leaflet::renderLeaflet({
   Grp_data <- dataset_grp() %>% sf::st_drop_geometry()
+  print(paste("Grp_data:", Grp_data %>% filter(Blk_grp=="010030109071")))
   Blk_data <- dataset_blk() %>% sf::st_drop_geometry()
   # map <- basemap
   
@@ -187,18 +207,20 @@ output$map <- leaflet::renderLeaflet({
   map <- leaflet() %>% 
     addTiles() %>% 
     addPolygons(  # block groups
-    data = sf::st_transform(dataset_grp(), crs=googlecrs),
-    group = "Block Grps",
-    opacity = 0.2,
-    weight = 1,
-    fillOpacity = 0.2,
-    popup = paste(
-      "Pop at risk:", Grp_data$Pop_at_risk, "<br>",
-      "Homes at risk:", Grp_data$Fam_hou_at_risk, "<br>",
-      "Avg flood depth (ft):", Grp_data$Mean_depth, "<br>",
-      "% in poverty:", Grp_data$Pct_poverty
-      )
-  ) %>% 
+      layerId=~Blk_grp,
+      data = sf::st_transform(dataset_grp(), crs=googlecrs),
+      group = "Block Grps",
+      opacity = 0.2,
+      weight = 1,
+      fillOpacity = 0.2,
+      popup = paste(
+        "Block Group:", Grp_data$Blk_grp, "<br>",
+        "Pop at risk:", Grp_data$Pop_at_risk, "<br>",
+        "Homes at risk:", Grp_data$Fam_hou_at_risk, "<br>",
+        "Avg flood depth (ft):", Grp_data$Mean_depth, "<br>",
+        "% in poverty:", Grp_data$Pct_poverty
+        )
+    ) %>% 
     addPolygons( #      Blocks
     data = dataset_blk(),
     group = "Blocks",
@@ -212,18 +234,18 @@ output$map <- leaflet::renderLeaflet({
       "Households:", Blk_data$Fam_house_blk, "<br>",
       "Average Water Depth:", Blk_data$Wmean, "<br>",
       "Pct of Block flooded:", Blk_data$Flood_pct
-  ) %>%
+  )) %>%
     addLayersControl(overlayGroups = c("Block Grps", "Blocks"),
                    options = layersControlOptions(collapsed=F)) %>%
     hideGroup("Blocks")
   
-  if (length(rv_table$rows)>0) {
-    print(paste("--X--", dataset_grp()[rv_table$rows,]))
-    map <- map %>% 
-    addPolylines(data=dataset_grp()[rv_table$rows,], 
-                 color="red", 
-                 weight=3)
-  }
+  # if (length(rv_table$rows)>0) {
+  #   print(paste("--X--", dataset_grp()[rv_table$rows,]))
+  #   map <- map %>% 
+  #   addPolylines(data=dataset_grp()[rv_table$rows,], 
+  #                color="red", 
+  #                weight=3)
+  # }
   
   # tmap::tmap_options(basemaps="OpenStreetMap")
   # # tmap::tmap_options(basemap.server = c("OpenStreetMap")) # tmap 4.0
@@ -260,6 +282,7 @@ output$map <- leaflet::renderLeaflet({
   #   tmap_leaflet(tm, in.shiny=TRUE) %>%
   #   leaflet::hideGroup("dataset_blk()")
   
+  map
 })
 
   # reactive values for map
