@@ -13,7 +13,7 @@ download from https://coast.noaa.gov/slrdata/Depth_Rasters/index.html
 Used wget with the convenient URL file NOAA provides to download all
 the geotiff files for the Gulf coast and the Atlantic coast.
 
-Each state conveniently includes a text file of the counties included, 
+Most states conveniently include a text file of the counties included, 
 which can be used as input to wget, as in:
 
 wget --input-file=URLlist_SC.txt 
@@ -29,8 +29,10 @@ library(stringr)
 library(tmap)
 library(terra)
 
+options(tigris_use_cache = TRUE)
+
 googlecrs <- "EPSG:4326"
-NOAAcrs <- "EPSG:4269"
+NAD83crs <- "EPSG:4269"
 
 path <- "/home/ajackson/Dropbox/Rprojects/ERD/SeaLevel/"
 Curated_path <- "/home/ajackson/Dropbox/Rprojects/Curated_Data_Files/"
@@ -38,6 +40,11 @@ mirror <- "/home/ajackson/Dropbox/mirrors/ajackson/ERD/"
 bigpath <- "/media/ajackson/extradrive1/SeaLevel/"
 
 ############    function
+
+#   This function takes the 10 meter resolution inundation files
+#   and converts them to 50 meter resolution - a 25:1 compaction.
+#   I use the median value of water depth as that will be less
+#   sensitive to the data not having a gaussian distribution.
 
 Prep_tif <- function(filename) {
   #   File is too big - blows up PC memory
@@ -53,6 +60,12 @@ Prep_tif <- function(filename) {
   return(df_tif)
 } ###########   end function Prep_tif
 
+    # This function takes the census block polygons and intersects
+    # them with the raster files. Output is number of cells with
+    # a value, indicating flooding, number of null cells, weighted
+    # mean of water depth values, weighted sum of those values,
+    # and the sum of the weights. Also the max, min, and sigma
+    
 Intersect_blocks <- function(df_tif, Blocks_trim) {
   #   Get intersecting blocks
   val_by_block2 <- exactextractr::exact_extract(
@@ -92,7 +105,7 @@ Note: the grids are in EPSG:4269
 Census polygons are NAD83, EPSG:4269
 
 ```{r}
-State <- "LA"
+State <- "SC"
 # Get blocks for State
 
 #     P16_002N  !!Total:!!Family households:
@@ -107,9 +120,17 @@ Counties_TX <- c("Calhoun", "Jackson", "Matagorda", "Victoria",
 "Cameron", "Kenedy", "Kleberg", "Willacy")
 Counties_LA <- c("Acadia", "Iberia", "Lafayette", "St. Martin", "St. Mary", "Vermilion", "Jefferson", "Orleans", "Plaquemines", "St. Bernard", "St. Charles", "St. John the Baptist",  "Ascension", "East Baton Rouge", "Iberville", "Jefferson", "Livingston", "Orleans", "St. Charles", "St. James", "St. Tammany", "Tangipahoa", "West Feliciana", "Allen", "Beauregard", "Calcasieu", "Cameron", "Jefferson Davis",
 "Lafourche", "Terrebonne" )
+Counties_NC <- c("Brunswick", "New Hanover", "Pender", "Onslow", "Carteret", "Craven", "Pamlico", "Beaufort", "Hyde", "Dare", "Tyrrell", "Washington", "Bertie", "Hertford", "Gates", "Chowan", "Perquimans", "Pasquotank", "Camden", "Currituck", "Pitt", "Jones", "Martin")
 Counties_LA <- NULL # list is incomplete
+# Counties_NC <- NULL # No list given
+Counties_VA <- NULL # No list given
+Counties_DC <- NULL # No list given
+Counties_MD <- NULL # No list given
+Counties_DE <- NULL # No list given
 Counties_GA <- c("Bryan", "Chatham", "Effingham", "Liberty", "Long", "McIntosh", "Brantley", "Camden", "Charlton", "Glynn", "Wayne")
 Counties_SC <- c("Charleston", "Berkeley", "Dorchester", "Georgetown", "Williamsburg", "Horry", "Florence", "Marion", "Beaufort", "Colleton", "Jasper")
+Counties_NJ <- c("Burlington", "Mercer", "Monmouth", "Ocean", "Bergen", "Essex", "Hudson", "Middlesex", "Passaic", "Somerset", "Union", "Atlantic", "Camden", "Cape May", "Cumberland", "Gloucester", "Salem")
+Counties_PA <- c("Bucks", "Delaware", "Montgomery", "Philadelphia")
 
 #   Fill counties variable with proper stuff
 Counties=eval(parse(text=paste0("Counties_", State)))
@@ -129,21 +150,27 @@ Blocks <- get_decennial(geography="block",
 
 #       Compact geotiffs
 
+Compress geotifs by reducing the resolution by a factor of 5, reducing file
+size by a factor of 25. This will leave them with a resolution of 50 meters.
+
+
+
 ```{r}
 #   Run function for each geotif
 
-infiles <- list.files(path=bigpath, pattern=paste0("^",State,"_*")) 
+infiles <- list.files(path=bigpath, pattern=paste0("^",State,"_.*ft\\.tif$")) 
 
 t1 <- proc.time()
 i <- 0
-tsum <- 0 #   elapsed time sum
+deltaTs <- rep(NA, 10)
+
 for (file in infiles) {
   t2 <- proc.time()
-  tsum <- tsum + t2[3] - t1[3]
-  print(t2-t1)
-  t1 <- t2
+  deltaTs[i%%10+1] <- t2[3] - t1[3]
   print(paste(file, "------", length(infiles)-i, "Time remaining =",
-        signif((length(infiles)-i)*(tsum/i)/60, 3), "minutes"))
+        signif((length(infiles)-i)*mean(deltaTs, na.rm=TRUE, trim=0.2)/60, 3), "minutes"))
+print(t2-t1)
+  t1 <- t2
   i <-  i + 1
   
   #   Read in geotiff, reduce by factor of 25, and output
@@ -160,20 +187,25 @@ for (file in infiles) {
 
 ##        Intersect blocks and geotifs
 
+Intersect census block polygons and rasters, calculating a variety of
+useful statistics. Also store the name of the raster file that was
+used, so that it can be walked back later.
+
 ```{r}
 
 All_stats=NULL
 area_flag <- "None" # this will tell when we encounter a new area
-infiles <- list.files(path=bigpath, pattern=paste0("^",State,"_*")) 
+infiles <- list.files(path=bigpath, pattern=paste0("^",State,"_.*small*")) 
 t1 <- proc.time()
 i <- 0
-tsum <- 0.001 #   elapsed time sum
+deltaTs <- rep(NA, 10)
+#     Read in each raster file and intersect with the block polygons
 for (file in infiles) {
 
   t2 <- proc.time()
-  tsum <- tsum + t2[3] - t1[3]
+  deltaTs[i%%10+1] <- t2[3] - t1[3]
   print(paste(file, "------", length(infiles)-i, "Time remaining =",
-        signif((length(infiles)-i)*(tsum/i)/60, 3), "minutes"))
+        signif((length(infiles)-i)*mean(deltaTs, na.rm=TRUE, trim=0.2)/60, 3), "minutes"))
 print(t2-t1)
   t1 <- t2
   i <-  i + 1
@@ -187,13 +219,13 @@ print(t2-t1)
   
   if (area_flag != area) {
     print("Trim")
-    terra::gdalCache(size = 4000)
+    terra::gdalCache(size = 10000)
     foo <- prioritizr::intersecting_units(Blocks, df_tif)
     Blocks_trim <- Blocks[foo,]
-    Blocks_trim <- Blocks_trim %>% 
-      mutate(Raster=file)
     area_flag <- area
   }
+  Blocks_trim <- Blocks_trim %>% 
+    mutate(Raster=file) # Add raster name that was used
 
   #   Intersect blocks with raster and calculate various summary stats 
   
@@ -201,14 +233,14 @@ print(t2-t1)
   Block_stats <- Intersect_blocks(df_tif, Blocks_trim) 
   Block_stats <- Block_stats %>% mutate(Depth=depth) # store depth from filename
   
-  #   Store results
+  #   Accumulate results
   
-  All_stats <- rbind(All_stats, Block_stats)
+  All_stats <- bind_rows(All_stats, Block_stats)
   
-  #   just in case
-  
-  saveRDS(All_stats, paste0(path, "All_stats_", State,".rds"))
 }
+
+saveRDS(All_stats, paste0(path, "All_stats_", State,".rds"))
+  
 ```
 
 
@@ -219,6 +251,7 @@ print(t2-t1)
 All_stats <- readRDS(paste0(path, "All_stats_", State,".rds"))
 
 All_stats2 <- All_stats %>% 
+  # mutate(Depth=as.numeric(Depth)) %>% 
   filter(Pop_blk>0) #   don't care if no one lives there
 
 All_stats2 %>% filter(Pop_blk<100) %>% 
@@ -245,7 +278,11 @@ foo <- All_stats2 %>%
 #     Calculate Block-Groups
 
 foo <- foo %>% 
-  mutate(Blk_grp=str_sub(GEOID, 1, 12))
+  mutate(Blk_grp=str_sub(GEOID, 1, 12)) %>% 
+  filter(Pop_blk>=25) %>%
+  filter(Fam_house_blk>=5) %>%
+  mutate(Flood_pct=signif(100*Num/(NumNA+Num),2)) %>% 
+  filter(Flood_pct>=5)
 
 #   Calculate some stats by block group 
 
@@ -271,16 +308,16 @@ BG_stats <- foo %>%
 All_BG <- left_join(foo, BG_stats, by=c("Depth", "Blk_grp"), 
                   relationship="many-to-one") %>% 
   select(!starts_with("Raster")) %>%
-  select(!Blocks) %>% 
-  filter(Pop_blk>=25) %>%
-  filter(Fam_house_blk>=5) %>%
-  mutate(Flood_pct=signif(100*Num/(NumNA+Num),2)) %>% 
-  filter(Flood_pct>=5)
+  select(!Blocks) #%>% 
+  # filter(Pop_blk>=25) %>%
+  # filter(Fam_house_blk>=5) %>%
+  # mutate(Flood_pct=signif(100*Num/(NumNA+Num),2)) #%>% 
+  # filter(Flood_pct>=5)
 
 #   Final dataset to be saved by block
 
 Block_geom <- All_stats2 %>% 
-  filter(Depth==10) %>% 
+  filter(Depth=="10") %>% 
   group_by(GEOID) %>% 
     summarise(GEOID=first(GEOID)) %>% 
   ungroup() %>% 
@@ -357,8 +394,8 @@ saveRDS(All_BG2, paste0(path, "Block_group_data_", State,".rds"))
 ```{r}
 
 All_BG2 %>% 
-  mutate(Depth=as.numeric(Depth)) %>% 
-  filter(Depth>9.6) %>% 
+  # mutate(Depth=as.numeric(Depth)) %>% 
+  filter(as.numeric(Depth)>9.6) %>% 
   ggplot(aes(x=Pct_poverty)) +
   geom_histogram() +
   labs(title="Poverty in Alabama in Census Blocks affected by Sea Level Rise",
@@ -366,9 +403,9 @@ All_BG2 %>%
        y="Number of Census Blocks")
 
 All_BG2 %>% 
-  mutate(Depth=as.numeric(Depth)) %>% 
+  # mutate(Depth=as.numeric(Depth)) %>% 
   mutate(Pop_fraction=Pop_at_risk/Pop_acs) %>% #fraction of pop in flooding blocks
-  filter(Depth>9.6) %>% 
+  filter(as.numeric(Depth)>9.6) %>% 
   ggplot(aes(x=Pop_fraction)) +
   geom_histogram(bins=20) +
   labs(title="Fraction of Population in Census Blocks affected by Sea Level Rise within a Block Group",
@@ -418,7 +455,7 @@ tmap::tmap_options(basemaps="OpenStreetMap")
 tmap::tmap_mode("view") # set mode to interactive plots
 
 tmap::tm_shape(All_stats2 %>% filter(str_starts(GEOID, "010030114191001")) %>% 
-                                 filter(Depth==10)) + 
+                                 filter(Depth=="10")) + 
     #tmap::tm_sf(col="ConvoColor", alpha=0.3) +
   # tmap::tm_fill(title = "Threat", alpha=0.3, style="pretty") +
   tmap::tm_polygons(alpha=0.5,
