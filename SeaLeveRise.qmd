@@ -105,7 +105,7 @@ Note: the grids are in EPSG:4269
 Census polygons are NAD83, EPSG:4269
 
 ```{r}
-State <- "SC"
+State <- "CT"
 # Get blocks for State
 
 #     P16_002N  !!Total:!!Family households:
@@ -127,6 +127,12 @@ Counties_VA <- NULL # No list given
 Counties_DC <- NULL # No list given
 Counties_MD <- NULL # No list given
 Counties_DE <- NULL # No list given
+Counties_ME <- c("Hancock", "Penobscot", "Waldo", "Washington", "Cumberland", "Kennebec", "Knox", "Lincoln", "Sagadahoc", "York")
+Counties_NY <- c("Suffolk", "Nassau", "New York", "Westchester", "Rockland")
+Counties_RI <- c("Bristol", "Kent", "Newport", "Providence", "Washington")
+Counties_CT <- c("Fairfield", "Hartford", "Middlesex", "New Haven", "New London")
+Counties_MS <- c("Hancock", "Harrison", "Jackson")
+Counties_NH <- c("Rockingham", "Strafford")
 Counties_GA <- c("Bryan", "Chatham", "Effingham", "Liberty", "Long", "McIntosh", "Brantley", "Camden", "Charlton", "Glynn", "Wayne")
 Counties_SC <- c("Charleston", "Berkeley", "Dorchester", "Georgetown", "Williamsburg", "Horry", "Florence", "Marion", "Beaufort", "Colleton", "Jasper")
 Counties_NJ <- c("Burlington", "Mercer", "Monmouth", "Ocean", "Bergen", "Essex", "Hudson", "Middlesex", "Passaic", "Somerset", "Union", "Atlantic", "Camden", "Cape May", "Cumberland", "Gloucester", "Salem")
@@ -181,6 +187,10 @@ print(t2-t1)
   terra::writeRaster(df_tif, paste0(bigpath, file, "_small.tif"))
   
   terra::tmpFiles(remove=TRUE) # do some cleanup
+  
+  #   Free memory
+  
+  gc()
 
 }
 ```
