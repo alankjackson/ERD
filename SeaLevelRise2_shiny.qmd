@@ -69,7 +69,6 @@ br()
 
 sliderInput('Pct_poverty', '> % in Poverty', 
             min=5, max=Max_poverty,
-            # min=5, max=100,
             value=10, 
             step=5, round=0)
 br()
@@ -84,6 +83,12 @@ radioButtons("Block_var", "Color Blocks by:",
                "Avg Flood Depth"="Wmean",
                "Households"="Fam_house_blk",
                "% Block Flooded"="Flood_pct"))
+
+#   select a block group and display water depth mode
+
+checkboxInput('Show_water', 'Show water depths on mouse click', value=FALSE)
+
+
 # 
 # checkboxInput('Show_blks', 'Show Blocks on mouse click', value=FALSE)
 
@@ -118,10 +123,16 @@ leafletOutput('map')
 DT::dataTableOutput('data')
 ```
 
+```{r}
+# tableOutput('data')
+DT::dataTableOutput('datablk')
+```
+
 ```{r server}
 #| context: server
-
+##################################
 #####   Load in a new state
+##################################
 
 df_grp <- reactive({
     print("============   read in grp data ==============")
@@ -143,27 +154,30 @@ df_blk <- reactive({
   }
 })
 
+Bbox <- reactive({sf::st_bbox(df_blk())})
+
+##################################
 #####   Subset data
+##################################
 
 dataset_grp <- reactive({
-  foo <- df_grp() %>% filter(Depth==input$Depth) %>%
+  df_grp() %>% filter(Depth==input$Depth) %>%
       filter(Pct_poverty>=input$Pct_poverty)
-  # print(paste("dataset_grp:", foo %>% filter(Blk_grp=="010030109071")))
-  foo
+})
+
+Grp_data <- reactive({
+  dataset_grp() %>% sf::st_drop_geometry()
 })
 
 dataset_blk <- reactive({
-  foo <- df_blk() %>% filter(Depth==input$Depth) %>%
-    filter(GEOID %in% unlist(dataset_grp()[["Blocks"]]))
-  # print(paste(foo$GEOID, foo$Blk_grp))
-  # foo2 <- df_blk() %>% filter(Blk_grp=="010030109071") %>% sf::st_drop_geometry()
-  # foo3 <- foo2 %>% filter(Depth==input$Depth)
-  # foo4 <- foo3 %>% filter(GEOID %in% unlist(dataset_grp()[["Blocks"]]))
-  # print(paste("dataset_blk 1:", foo2))
-  # print(paste("dataset_blk 2:", foo3))
-  # print(paste("dataset_blk 3:", foo4))
-  foo
+  df_blk() %>% filter(Depth==input$Depth) %>%
+    filter(GEOID %in% unlist(dataset_grp()[["Blocks"]])) 
 })
+
+Blk_data <- reactive({
+  dataset_blk() %>% sf::st_drop_geometry()
+})
+
 
 #####     end subsetting
 
@@ -174,10 +188,23 @@ dataset_blk <- reactive({
   #     print(paste("--1--", unlist(dataset_grp()[["Blocks"]]))) 
   #     # print(paste("--2--", unlist(dataset_grp()[["Blocks"]]))
   # }) #END OBSERVE EVENT
-  observeEvent(input$data_rows_selected, {
-      rows <- input$data_rows_selected
+  # observeEvent(input$data_rows_selected, ignoreNULL = FALSE, {
+  #     rows <- input$data_rows_selected
+  observeEvent(rv_table$rows, ignoreNULL = FALSE, {
+      rows <- rv_table$rows
       print(paste("--1--", rows))
       # print(paste("--2--", unlist(dataset_grp()[["Blocks"]]))
+      print(paste("--2--", dataset_grp()[rows,][["Blk_grp"]]))
+
+      if (length(rv_table$rows)>0) {
+        leafletProxy("map") %>% 
+          removeShape(layerId = ~Blk_grp) %>%
+          addPolylines(data=dataset_grp()[rows,],
+                       layerId=~Blk_grp,
+                       weight=4)
+      }
+      
+        
   }) #END OBSERVE EVENT
     #click on polygon
     observe({ 
@@ -188,101 +215,71 @@ dataset_blk <- reactive({
     })
 ###################################################################
 
-# output$map <- renderTmap({
+##################################
+#       Build map
+##################################
+    
+    #   Build empty master map by state
 output$map <- leaflet::renderLeaflet({
-  Grp_data <- dataset_grp() %>% sf::st_drop_geometry()
-  print(paste("Grp_data:", Grp_data %>% filter(Blk_grp=="010030109071")))
-  Blk_data <- dataset_blk() %>% sf::st_drop_geometry()
-  # map <- basemap
+  leaflet() %>% addTiles() %>%
+  fitBounds(Bbox()[["xmin"]], Bbox()[["ymin"]], 
+            Bbox()[["xmax"]], Bbox()[["ymax"]])
+})
   
-  if (FALSE) { # show water
-  #   Add water grid
-  map <- map %>%
-    addRasterImage(Crop_tif, colors = pal, opacity = 0.5) %>%
-    addLegend(pal = pal, values = terra::values(Crop_tif),
-    title = "Water Depth") 
-  }
+  # if (FALSE) { # show water
+  # #   Add water grid
+  # map <- map %>%
+  #   addRasterImage(Crop_tif, colors = pal, opacity = 0.5) %>%
+  #   addLegend(pal = pal, values = terra::values(Crop_tif),
+  #   title = "Water Depth") 
+  # }
   #   Block groups and blocks
   # map <- map %>%
-  map <- leaflet() %>% 
-    addTiles() %>% 
+
+observe({
+  leafletProxy("map", data=dataset_grp()) %>% 
+    clearShapes() %>%
+    # addTiles() %>% 
     addPolygons(  # block groups
       layerId=~Blk_grp,
-      data = sf::st_transform(dataset_grp(), crs=googlecrs),
+      # data = sf::st_transform(dataset_grp(), crs=googlecrs),
       group = "Block Grps",
       opacity = 0.2,
       weight = 1,
       fillOpacity = 0.2,
       popup = paste(
-        "Block Group:", Grp_data$Blk_grp, "<br>",
-        "Pop at risk:", Grp_data$Pop_at_risk, "<br>",
-        "Homes at risk:", Grp_data$Fam_hou_at_risk, "<br>",
-        "Avg flood depth (ft):", Grp_data$Mean_depth, "<br>",
-        "% in poverty:", Grp_data$Pct_poverty
+        "Block Group:", Grp_data()$Blk_grp, "<br>",
+        "Pop at risk:", Grp_data()$Pop_at_risk, "<br>",
+        "Homes at risk:", Grp_data()$Fam_hou_at_risk, "<br>",
+        "Avg flood depth (ft):", Grp_data()$Mean_depth, "<br>",
+        "% in poverty:", Grp_data()$Pct_poverty
         )
-    ) %>% 
+    ) 
+})
+observe({
+  leafletProxy("map", data=dataset_blk()) %>% 
+    # clearShapes() %>% 
+    # addTiles() %>% 
     addPolygons( #      Blocks
-    data = dataset_blk(),
     group = "Blocks",
     color = "purple",
     # opacity = 1,
     weight = 1,
     fillOpacity = 0.2,
     popup = paste(
-      "Block Name:", Blk_data$NAME, "<br>",
-      "Population:", Blk_data$Pop_blk, "<br>",
-      "Households:", Blk_data$Fam_house_blk, "<br>",
-      "Average Water Depth:", Blk_data$Wmean, "<br>",
-      "Pct of Block flooded:", Blk_data$Flood_pct
-  )) %>%
+      "Block Name:", Blk_data()$NAME, "<br>",
+      "Population:", Blk_data()$Pop_blk, "<br>",
+      "Households:", Blk_data()$Fam_house_blk, "<br>",
+      "Average Water Depth:", Blk_data()$Wmean, "<br>",
+      "Pct of Block flooded:", Blk_data()$Flood_pct
+  )) 
+})
+observe({
+  # State <- input$State
+  leafletProxy("map", data=dataset_blk()) %>% 
     addLayersControl(overlayGroups = c("Block Grps", "Blocks"),
-                   options = layersControlOptions(collapsed=F)) %>%
-    hideGroup("Blocks")
-  
-  # if (length(rv_table$rows)>0) {
-  #   print(paste("--X--", dataset_grp()[rv_table$rows,]))
-  #   map <- map %>% 
-  #   addPolylines(data=dataset_grp()[rv_table$rows,], 
-  #                color="red", 
-  #                weight=3)
-  # }
-  
-  # tmap::tmap_options(basemaps="OpenStreetMap")
-  # # tmap::tmap_options(basemap.server = c("OpenStreetMap")) # tmap 4.0
-  # tmap_mode("view")
-  # 
-  # print("--- here I am")
-  # tm <-
-  # tm_shape(dataset_grp()) +
-  #   tm_polygons("Pct_poverty", alpha=0.3,
-  #               popup.vars=c("Blk_grp",
-  #                            "Pop_at_risk",
-  #                            "Fam_hou_at_risk",
-  #                            "Mean_depth",
-  #                            "Pct_pop_at_risk",
-  #                            "Pct_poverty")) +
-  #     tm_dots(size=0.02) +
-  # tm_shape(dataset_blk()) +
-  #   # tm_polygons("Pop_blk", alpha=0.3,
-  #   tm_polygons(input$Block_var, alpha=0.3, border.col="purple",
-  #               popup.vars=c("Block Name"="NAME",
-  #                            "Population"="Pop_blk",
-  #                            "Households"="Fam_house_blk",
-  #                            "Average Water Depth"="Wmean",
-  #                            # "Pct_Pop_at_risk",
-  #                            "Pct of Block flooded"="Flood_pct"))  
-  # 
-  # if (length(rv_table$rows)>0) {
-  #   print(paste("--X--", dataset_grp()[rv_table$rows,]))
-  #   tm <- tm +
-  #   tm_shape(dataset_grp()[rv_table$rows,]) +
-  #     tm_borders(col="red", lwd=3) 
-  # }
-  # 
-  #   tmap_leaflet(tm, in.shiny=TRUE) %>%
-  #   leaflet::hideGroup("dataset_blk()")
-  
-  map
+                   options = layersControlOptions(collapsed=F)) #%>%
+    # hideGroup("Blocks")
 })
 
   # reactive values for map
@@ -298,6 +295,17 @@ output$map <- leaflet::renderLeaflet({
   #       print(paste("--2--", rv_map$Clicks))
   #   }
   # }) #END OBSERVE EVENT
+
+output$datablk <- DT::renderDataTable({
+  dataset_blk() %>% sf::st_drop_geometry()} %>% 
+    select(GEOID, Depth, Pop_blk, Wmean, 
+           Blk_grp),
+  colnames=c("Geoid", 
+             "Depth", 
+             "Pop", 
+             "Mean flood depth", 
+             "Block Grp")
+)
 
 # output$data <- renderTable({
 output$data <- DT::renderDataTable({
