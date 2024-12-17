@@ -13,7 +13,6 @@ editor: source
 
 library(tidyverse)
 library(stringr)
-# library(tmap)
 library(leaflet)
 
 shiny::devmode(TRUE)
@@ -54,16 +53,15 @@ State_df <- as_tibble(cbind(States, State_abbr))
 #   Round up to the nearest 5
 Max_poverty <- 5*round((max(df_grp$Pct_poverty, na.rm=TRUE)+2.5)/5)
 
-# basemap <- leaflet() %>%
-#   # add tiles
-#   addProviderTiles("OpenStreetMap")
+Row_diff <- NULL  # Row deselected from table
+
 ```
 
 # {.sidebar}
 
 ```{r sidebar}
 
-selectInput('State', 'Choose a state', States)
+selectInput('State', 'Choose a state', States, selected="Alabama")
 
 br()
 
@@ -86,8 +84,11 @@ radioButtons("Block_var", "Color Blocks by:",
 
 #   select a block group and display water depth mode
 
-checkboxInput('Show_water', 'Show water depths on mouse click', value=FALSE)
+br()
 
+checkboxInput('Show_water', HTML('<b>Show water depths on mouse click</b>'), value=FALSE)
+
+br()
 
 # 
 # checkboxInput('Show_blks', 'Show Blocks on mouse click', value=FALSE)
@@ -100,9 +101,6 @@ census data.
 Note that Percent Poverty applies to those blocks at risk for a given value of
 sea level rise - so for small rises in sea level and high poverty values, there
 will be no blocks appearing.
-
-Blocks are turned off by default. Use the layer tool in the upper left corner
-to control which layer is visible.
 
 Note that the visible data is also shown as a table in the Data tab. Rows
 selected in the data table will be highlighted on the map.
@@ -123,10 +121,6 @@ leafletOutput('map')
 DT::dataTableOutput('data')
 ```
 
-```{r}
-# tableOutput('data')
-DT::dataTableOutput('datablk')
-```
 
 ```{r server}
 #| context: server
@@ -140,7 +134,7 @@ df_grp <- reactive({
     i <- which(State_df$States==input$State)
     #     Read block-group data off disk
   readRDS(paste0(Curated_path,
-                 paste0("Block_group_data_",State_df$State_abbr[i] ,".rds")))
+                 paste0("Block_group_data_",State_df[i,]$State_abbr ,".rds")))
   }
 })
 
@@ -161,20 +155,24 @@ Bbox <- reactive({sf::st_bbox(df_blk())})
 ##################################
 
 dataset_grp <- reactive({
+  print("--1--")
   df_grp() %>% filter(Depth==input$Depth) %>%
       filter(Pct_poverty>=input$Pct_poverty)
 })
 
 Grp_data <- reactive({
+  print("--2--")
   dataset_grp() %>% sf::st_drop_geometry()
 })
 
 dataset_blk <- reactive({
+  print("--3--")
   df_blk() %>% filter(Depth==input$Depth) %>%
     filter(GEOID %in% unlist(dataset_grp()[["Blocks"]])) 
 })
 
 Blk_data <- reactive({
+  print("--4--")
   dataset_blk() %>% sf::st_drop_geometry()
 })
 
@@ -190,22 +188,30 @@ Blk_data <- reactive({
   # }) #END OBSERVE EVENT
   # observeEvent(input$data_rows_selected, ignoreNULL = FALSE, {
   #     rows <- input$data_rows_selected
-  observeEvent(rv_table$rows, ignoreNULL = FALSE, {
-      rows <- rv_table$rows
-      print(paste("--1--", rows))
-      # print(paste("--2--", unlist(dataset_grp()[["Blocks"]]))
-      print(paste("--2--", dataset_grp()[rows,][["Blk_grp"]]))
-
-      if (length(rv_table$rows)>0) {
-        leafletProxy("map") %>% 
-          removeShape(layerId = ~Blk_grp) %>%
-          addPolylines(data=dataset_grp()[rows,],
-                       layerId=~Blk_grp,
-                       weight=4)
-      }
-      
-        
-  }) #END OBSERVE EVENT
+  # observeEvent(rv_table$rows, ignoreNULL = FALSE, {
+  #     if (length(rv_table$rows)>0) {
+  #     rows <- rv_table$rows
+  #     print(paste("--1--", rows))
+  #     # print(paste("--2--", unlist(dataset_grp()[["Blocks"]]))
+  #     print(paste("--2--", dataset_grp()[rows,][["Blk_grp"]]))
+  # 
+  #     # if (length(rv_table$rows)>0) {
+  #       print(paste("--3--", rv_table$rows))
+  #       leafletProxy("map") %>% 
+  #         # removeShape(layerId = ~Blk_grp) %>%
+  #         addPolylines(data=dataset_grp()[rows,],
+  #                      layerId=~Blk_grp,
+  #                      weight=4)
+  #       print("--4--")
+  #     }
+  #   else {
+  #       print(paste("--5--", rv_table$rows))
+  #       leafletProxy("map") %>% 
+  #         removeShape(layerId = ~Blk_grp)
+  #   }
+  #     
+  #       
+  # }) #END OBSERVE EVENT
     #click on polygon
     observe({ 
         event <- input$map_shape_click
@@ -221,6 +227,7 @@ Blk_data <- reactive({
     
     #   Build empty master map by state
 output$map <- leaflet::renderLeaflet({
+  print("--5--")
   leaflet() %>% addTiles() %>%
   fitBounds(Bbox()[["xmin"]], Bbox()[["ymin"]], 
             Bbox()[["xmax"]], Bbox()[["ymax"]])
@@ -237,16 +244,23 @@ output$map <- leaflet::renderLeaflet({
   # map <- map %>%
 
 observe({
+  print("--6--")
+  foo <- dataset_blk()[1,] # trigger a redraw
+  #   Reset color scale
+  pal <- colorNumeric("YlOrBr",
+                      c(input$Pct_poverty, Max_poverty),
+                      na.color = "transparent")
+  
   leafletProxy("map", data=dataset_grp()) %>% 
     clearShapes() %>%
-    # addTiles() %>% 
+    clearControls() %>% 
     addPolygons(  # block groups
-      layerId=~Blk_grp,
-      # data = sf::st_transform(dataset_grp(), crs=googlecrs),
       group = "Block Grps",
-      opacity = 0.2,
+      opacity = 0.8,
+      color="black",
       weight = 1,
-      fillOpacity = 0.2,
+      fillOpacity = 0.4,
+      fillColor = ~pal(Pct_poverty),
       popup = paste(
         "Block Group:", Grp_data()$Blk_grp, "<br>",
         "Pop at risk:", Grp_data()$Pop_at_risk, "<br>",
@@ -254,27 +268,51 @@ observe({
         "Avg flood depth (ft):", Grp_data()$Mean_depth, "<br>",
         "% in poverty:", Grp_data()$Pct_poverty
         )
-    ) 
+    ) %>% 
+    addLegend(
+      position = "topright",
+      pal=pal,
+      values = ~Pct_poverty,
+      title="% Poverty"
+    )
 })
 observe({
+  print("--7--")
+  
+  pal <- colorNumeric("Purples",
+                      c(min(Blk_data()[[input$Block_var]]),
+                      max(Blk_data()[[input$Block_var]])),
+                      na.color = "transparent")
+  
+  print(paste("--7.1--", input$Block_var))
+  print(paste("--7.2--", Blk_data()[[input$Block_var]]))
+  
   leafletProxy("map", data=dataset_blk()) %>% 
-    # clearShapes() %>% 
-    # addTiles() %>% 
+    removeControl("Blocks") %>%
     addPolygons( #      Blocks
     group = "Blocks",
     color = "purple",
-    # opacity = 1,
+    opacity = 1,
     weight = 1,
-    fillOpacity = 0.2,
+    fillOpacity = 0.4,
+    fillColor = ~pal(Blk_data()[[input$Block_var]]),
     popup = paste(
       "Block Name:", Blk_data()$NAME, "<br>",
       "Population:", Blk_data()$Pop_blk, "<br>",
       "Households:", Blk_data()$Fam_house_blk, "<br>",
       "Average Water Depth:", Blk_data()$Wmean, "<br>",
       "Pct of Block flooded:", Blk_data()$Flood_pct
-  )) 
+  ))  %>% 
+    addLegend(
+      position = "bottomright",
+      pal=pal,
+      values = Blk_data()[[input$Block_var]],
+      layerId = "Blocks",
+      title=input$Block_var
+    )
 })
 observe({
+  print("--8--")
   # State <- input$State
   leafletProxy("map", data=dataset_blk()) %>% 
     addLayersControl(overlayGroups = c("Block Grps", "Blocks"),
@@ -282,33 +320,47 @@ observe({
     # hideGroup("Blocks")
 })
 
-  # reactive values for map
-  # rv_map <-reactiveValues(Clicks=list())
-  # 
-  # observeEvent(input$map_shape_click, {
-  #     click <- input$map_shape_click
-  #     # print(paste("--1--",str(click)))
-  #     # rv_map$Clicks<-c(rv_map$Clicks, click$id)
-  #     # rv_map$Clicks <- stringr::str_extract(rv_map$Clicks, "\\d+$")
-  #   if (!input$Show_blks){ # only if in group mode
-  #       rv_map$Clicks <- stringr::str_extract(click$id, "\\d+$")
-  #       print(paste("--2--", rv_map$Clicks))
-  #   }
-  # }) #END OBSERVE EVENT
 
-output$datablk <- DT::renderDataTable({
-  dataset_blk() %>% sf::st_drop_geometry()} %>% 
-    select(GEOID, Depth, Pop_blk, Wmean, 
-           Blk_grp),
-  colnames=c("Geoid", 
-             "Depth", 
-             "Pop", 
-             "Mean flood depth", 
-             "Block Grp")
-)
+#####################
+#   Highlight and remove highlights for polygons from table
+#####################
 
-# output$data <- renderTable({
+observeEvent(Row_list$rows, ignoreNULL = FALSE, {
+  print(paste("--9--", Row_list$rows))
+    if (Sel()) { # at least one row is selected
+  print("--9.1--")
+    Row_diff <- setdiff(Row_list$oldrows, Row_list$rows) # find deleted row
+  print("--9.1.1--")
+    rows <- Row_list$rows
+    Row_list$oldrows <- rows
+  print("--9.1.2--")
+      leafletProxy("map") %>%
+        addPolylines(data=dataset_grp()[rows,],
+                     color="red",
+                     layerId=~Blk_grp,
+                     weight=4)
+    }
+  if (!is.null(Row_diff)){ # a row was unselected
+  print("--9.2--")
+      leafletProxy("map") %>%
+        removeShape(layerId = dataset_grp()[Row_diff,]$Blk_grp)
+  }
+  if(!Sel() ){ # the final row was unselected
+  print("--9.3--")
+      leafletProxy("map") %>%
+        removeShape(layerId = dataset_grp()[Row_list$oldrows,]$Blk_grp)
+  print("--9.4--")
+  }
+
+
+}) #END OBSERVE EVENT
+
+#####################
+#   Render the table
+#####################
+  
 output$data <- DT::renderDataTable({
+  print("--10--")
   dataset_grp() %>% sf::st_drop_geometry()} %>% 
     select(Blk_grp, Pop_at_risk, Fam_hou_at_risk, Mean_depth, 
            Pct_pop_at_risk, Pct_poverty),
@@ -320,10 +372,12 @@ output$data <- DT::renderDataTable({
              "% Poverty")
 )
 
-rv_table <-reactiveValues(rows=list())
-
+#############    Table selection controls
+Sel <- reactive({!is.null(input$data_rows_selected)}) # is there a selection?
+Row_list <-reactiveValues(rows=list()) # what rows are selected?
 observeEvent(input$data_rows_selected, ignoreNULL = FALSE, {
-    rv_table$rows <- input$data_rows_selected
+    Row_list$rows <- input$data_rows_selected
 }) #END OBSERVE EVENT
+
 
 ```
