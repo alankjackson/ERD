@@ -105,7 +105,7 @@ Note: the grids are in EPSG:4269
 Census polygons are NAD83, EPSG:4269
 
 ```{r}
-State <- "CT"
+State <- "MA"
 # Get blocks for State
 
 #     P16_002N  !!Total:!!Family households:
@@ -137,6 +137,7 @@ Counties_GA <- c("Bryan", "Chatham", "Effingham", "Liberty", "Long", "McIntosh",
 Counties_SC <- c("Charleston", "Berkeley", "Dorchester", "Georgetown", "Williamsburg", "Horry", "Florence", "Marion", "Beaufort", "Colleton", "Jasper")
 Counties_NJ <- c("Burlington", "Mercer", "Monmouth", "Ocean", "Bergen", "Essex", "Hudson", "Middlesex", "Passaic", "Somerset", "Union", "Atlantic", "Camden", "Cape May", "Cumberland", "Gloucester", "Salem")
 Counties_PA <- c("Bucks", "Delaware", "Montgomery", "Philadelphia")
+Counties_MA <- c("Barnstable", "Bristol", "Dukes", "Essex", "Middlesex", "Nantucket", "Plymouth", "Suffolk", "Norfolk") 
 
 #   Fill counties variable with proper stuff
 Counties=eval(parse(text=paste0("Counties_", State)))
