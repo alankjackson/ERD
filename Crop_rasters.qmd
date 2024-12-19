@@ -1,0 +1,123 @@
+---
+title: "Crop Raster Layers"
+author: "Alan Jackson"
+format: html
+editor: source
+---
+
+
+```{r setup}
+
+library(tidyverse)
+library(stringr)
+library(sf)
+library(tmap)
+library(terra)
+
+googlecrs <- "EPSG:4326"
+NAD83crs <- "EPSG:4269"
+
+path <- "/home/ajackson/Dropbox/Rprojects/ERD/SeaLevel/"
+Curated_path <- "/home/ajackson/Dropbox/Rprojects/Curated_Data_Files/"
+mirror <- "/home/ajackson/Dropbox/mirrors/ajackson/ERD/"
+bigpath <- "/media/ajackson/extradrive1/SeaLevel/"
+
+############    function
+
+#   This function takes the 10 meter resolution inundation files
+#   and converts them to 50 meter resolution - a 25:1 compaction.
+#   I use the median value of water depth as that will be less
+#   sensitive to the data not having a gaussian distribution.
+
+Prep_tif <- function(filename) {
+  #   File is too big - blows up PC memory
+  
+  df_tif <- terra::aggregate(terra::rast(filename), 
+                           fact=5, fun="median", na.rm=TRUE)
+  
+  #   Get rid of flags
+  df_tif <- terra::ifel(df_tif > 9, NA, df_tif)
+  #   convert depths to feet
+  df_tif <- df_tif*3.28084
+  
+  return(df_tif)
+} ###########   end function Prep_tif
+
+    # This function takes the census block polygons and intersects
+    # them with the raster files. Output is number of cells with
+    # a value, indicating flooding, number of null cells, weighted
+    # mean of water depth values, weighted sum of those values,
+    # and the sum of the weights. Also the max, min, and sigma
+    
+Intersect_blocks <- function(df_tif, Blocks_trim) {
+  #   Get intersecting blocks
+  val_by_block2 <- exactextractr::exact_extract(
+                       x=df_tif,
+                       y=Blocks_trim,
+                       max_cells_in_memory=8e+07,
+                       include_cols=c("GEOID")) %>% 
+                   dplyr::bind_rows() %>%
+                   tibble::as_tibble()
+  
+  #   Collapse data down to block level
+  Stats_by_block <- val_by_block2 %>% 
+    group_by(GEOID) %>% 
+      summarize(Wmean=stats::weighted.mean(value, coverage_fraction, na.rm=TRUE),
+                Wvaluesum=sum(value*coverage_fraction, na.rm=TRUE),
+                Weights=sum(coverage_fraction, na.rm=TRUE),
+                Num=sum(!is.na(value)),
+                NumNA=sum(is.na(value)),
+                Max=max(value, na.rm=TRUE),
+                Min=min(value, na.rm=TRUE),
+                Sigma=sd(value, na.rm=TRUE)
+      ) %>% 
+    filter(Num>0)
+  
+  #   Join Blocks to stats
+  
+  Stat_blocks <- inner_join(Blocks_trim, Stats_by_block, by="GEOID")
+  
+  return(Stat_blocks)
+}  ########   end of function Intersect_blocks
+
+```
+
+##        get census blocks
+
+Note: the grids are in EPSG:4269
+Census polygons are NAD83, EPSG:4269
+
+##       Reproject blocks & block groups to googlecrs
+
+reproject and crop geotifs to each block 
+
+```{r}
+
+States <- c("AL", "CT", "DC", "DE", "FL", "GA", "LA", "MA", "MD", "ME", 
+"MS", "NC", "NH", "NJ", "NY", "PA", "RI", "SC", "TX", "VA")
+
+for (State in States) {
+
+  Blocks <- readRDS(paste0(path, "Block_data_", State,".rds"))
+  Groups <- readRDS(paste0(path, "Block_group_data_", State,".rds"))
+  
+  Blocks <- st_transform(Blocks, googlecrs) %>% 
+    mutate(Depth=as.character(as.numeric(Depth)))
+  Groups <- st_transform(Groups, googlecrs) %>% 
+    mutate(Depth=as.character(as.numeric(Depth)))
+  
+  saveRDS(Blocks, paste0(path, "New/Block_data_", State,".rds"))
+  saveRDS(Groups, paste0(path, "New/Block_group_data_", State,".rds"))
+}
+
+#     
+
+```
+
+
+
+
+
+
+
+
