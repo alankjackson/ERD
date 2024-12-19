@@ -22,6 +22,7 @@ googlecrs <- "EPSG:4326"
 # path <- "/home/ajackson/Dropbox/Rprojects/TexasDioceseCreationCare/Data/"
 # Curated_path <- "/home/ajackson/Dropbox/Rprojects/Curated_Data_Files/"
 Curated_path <- "/home/ajackson/Dropbox/Rprojects/ERD/SeaLevel/"
+Tiff_path <- "/media/ajackson/extradrive1/SeaLevel/"
 
 Google_notes <- "https://docs.google.com/document/d/1ZYLhbcxoM2DShvo-eewVF4UHyNHtJVhjPB6KRr6JFI4/edit?usp=sharing"
 
@@ -54,6 +55,81 @@ State_df <- as_tibble(cbind(States, State_abbr))
 Max_poverty <- 5*round((max(df_grp$Pct_poverty, na.rm=TRUE)+2.5)/5)
 
 Row_diff <- NULL  # Row deselected from table
+
+###################################################################
+#       Functions
+###################################################################
+
+Draw_blkgrp <- function(dataset, Grp_data, pal){
+  leafletProxy("map", data=dataset) %>% 
+    clearShapes() %>%
+    clearControls() %>% 
+    addPolygons(  # block groups
+      group = "Block Grps",
+      layerId = ~Blk_grp,
+      opacity = 0.8,
+      color="black",
+      weight = 1,
+      fillOpacity = 0.4,
+      fillColor = ~pal(Pct_poverty),
+      popup = paste(
+        "Block Group:", Grp_data$Blk_grp, "<br>",
+        "Pop at risk:", Grp_data$Pop_at_risk, "<br>",
+        "Homes at risk:", Grp_data$Fam_hou_at_risk, "<br>",
+        "Avg flood depth (ft):", Grp_data$Mean_depth, "<br>",
+        "% in poverty:", Grp_data$Pct_poverty
+        )
+    ) %>% 
+    addLegend(
+      position = "topright",
+      pal=pal,
+      values = ~Pct_poverty,
+      title="% Poverty"
+    )
+}
+
+Draw_block <- function(dataset, Blk_data, pal, input){
+  leafletProxy("map", data=dataset) %>% 
+    removeControl("Blocks") %>%
+    addPolygons( #      Blocks
+    group = "Blocks",
+    color = "purple",
+    opacity = 1,
+    weight = 1,
+    fillOpacity = 0.2,
+    fillColor = ~pal(Blk_data[[input$Block_var]]),
+    popup = paste(
+      "Block Name:", Blk_data$NAME, "<br>",
+      "Population:", Blk_data$Pop_blk, "<br>",
+      "Households:", Blk_data$Fam_house_blk, "<br>",
+      "Average Water Depth:", Blk_data$Wmean, "<br>",
+      "Pct of Block flooded:", Blk_data$Flood_pct
+  ))  %>% 
+    addLegend(
+      position = "bottomright",
+      pal=pal,
+      values = Blk_data[[input$Block_var]],
+      layerId = "Blocks",
+      title=input$Block_var
+    )  
+}
+
+Get_tile <- function(Grp_data, Grp_id, State, depth){
+  i <- which(State_df$States==State)
+  State <- State_df[i,]$State_abbr
+  print(paste("Get_tile:", Grp_id, State, depth))
+  # print(Grp_data()[1,])
+  files <- Grp_data() %>% 
+    filter(Blk_grp==Grp_id) %>% 
+    filter(Depth==depth) %>% 
+    select(Rasters, Blk_grp, Depth) %>% 
+    separate_longer_delim(Rasters, delim=",") %>% 
+    mutate(filename=paste0(Rasters, "_slr_depth_", 
+                           str_replace(Depth, "\\,", "_"),
+                           "ft.tif_small.tif"))
+  print(files)
+  files$filename
+}
 
 ```
 
@@ -131,10 +207,12 @@ DT::dataTableOutput('data')
 df_grp <- reactive({
     print("============   read in grp data ==============")
   if ( Local_test ) {
+    print(paste("State=", input$State))
     i <- which(State_df$States==input$State)
+    print(paste0("Read in ", "Block_group_data_",State_df[i,]$State_abbr,".rds"))
     #     Read block-group data off disk
   readRDS(paste0(Curated_path,
-                 paste0("Block_group_data_",State_df[i,]$State_abbr ,".rds")))
+                 paste0("Block_group_data_", State_df[i,]$State_abbr,".rds")))
   }
 })
 
@@ -142,9 +220,10 @@ df_blk <- reactive({
     print("============   read in blk data ==============")
   if ( Local_test ) {
     i <- which(State_df$States==input$State)
+    print(paste0("Read in ", "Block_data_", State_df[i,]$State_abbr,".rds"))
     #     Read block data off disk
   readRDS(paste0(Curated_path,
-                 paste0("Block_data_",State_df$State_abbr[i] ,".rds")))
+                 paste0("Block_data_",State_df[i,]$State_abbr,".rds")))
   }
 })
 
@@ -167,12 +246,13 @@ Grp_data <- reactive({
 
 dataset_blk <- reactive({
   print("--3--")
-  df_blk() %>% filter(Depth==input$Depth) %>%
-    filter(GEOID %in% unlist(dataset_grp()[["Blocks"]])) 
+  df_blk() %>% filter(Depth==input$Depth) #%>%
+    # filter(GEOID %in% unlist(dataset_grp()[["Blocks"]])) 
 })
 
 Blk_data <- reactive({
   print("--4--")
+  # print(summary(dataset_blk()))
   dataset_blk() %>% sf::st_drop_geometry()
 })
 
@@ -213,11 +293,11 @@ Blk_data <- reactive({
   #       
   # }) #END OBSERVE EVENT
     #click on polygon
-    observe({ 
-        event <- input$map_shape_click
-        print(paste("Blk_grp:", event$id))
-        print(dataset_grp() %>% filter(Blk_grp=="event$id"))
-        
+    # observe({ 
+Select_grp <- reactive({ 
+                  event <- input$map_shape_click
+                  print(paste("Blk_grp:", event$id))
+                  event$id
     })
 ###################################################################
 
@@ -243,6 +323,9 @@ output$map <- leaflet::renderLeaflet({
   #   Block groups and blocks
   # map <- map %>%
 
+#######################
+#     Draw Block Group polys
+#######################
 observe({
   print("--6--")
   foo <- dataset_blk()[1,] # trigger a redraw
@@ -250,67 +333,36 @@ observe({
   pal <- colorNumeric("YlOrBr",
                       c(input$Pct_poverty, Max_poverty),
                       na.color = "transparent")
-  
-  leafletProxy("map", data=dataset_grp()) %>% 
-    clearShapes() %>%
-    clearControls() %>% 
-    addPolygons(  # block groups
-      group = "Block Grps",
-      opacity = 0.8,
-      color="black",
-      weight = 1,
-      fillOpacity = 0.4,
-      fillColor = ~pal(Pct_poverty),
-      popup = paste(
-        "Block Group:", Grp_data()$Blk_grp, "<br>",
-        "Pop at risk:", Grp_data()$Pop_at_risk, "<br>",
-        "Homes at risk:", Grp_data()$Fam_hou_at_risk, "<br>",
-        "Avg flood depth (ft):", Grp_data()$Mean_depth, "<br>",
-        "% in poverty:", Grp_data()$Pct_poverty
-        )
-    ) %>% 
-    addLegend(
-      position = "topright",
-      pal=pal,
-      values = ~Pct_poverty,
-      title="% Poverty"
-    )
+  if (!input$Show_water){
+    Draw_blkgrp(dataset_grp(), Grp_data(), pal)
+  }
 })
+
+
+#######################
+#     Draw Block polys
+#######################
 observe({
   print("--7--")
+  print(paste("Block_var:", input$Block_var))
+  # print(summary(Blk_data()))
   
-  pal <- colorNumeric("Purples",
-                      c(min(Blk_data()[[input$Block_var]]),
-                      max(Blk_data()[[input$Block_var]])),
+  pal <- colorNumeric("Greys",
+                      c(min(Blk_data()[[input$Block_var]], na.rm=TRUE),
+                      max(Blk_data()[[input$Block_var]], na.rm=TRUE)),
                       na.color = "transparent")
   
   print(paste("--7.1--", input$Block_var))
   print(paste("--7.2--", Blk_data()[[input$Block_var]]))
   
-  leafletProxy("map", data=dataset_blk()) %>% 
-    removeControl("Blocks") %>%
-    addPolygons( #      Blocks
-    group = "Blocks",
-    color = "purple",
-    opacity = 1,
-    weight = 1,
-    fillOpacity = 0.4,
-    fillColor = ~pal(Blk_data()[[input$Block_var]]),
-    popup = paste(
-      "Block Name:", Blk_data()$NAME, "<br>",
-      "Population:", Blk_data()$Pop_blk, "<br>",
-      "Households:", Blk_data()$Fam_house_blk, "<br>",
-      "Average Water Depth:", Blk_data()$Wmean, "<br>",
-      "Pct of Block flooded:", Blk_data()$Flood_pct
-  ))  %>% 
-    addLegend(
-      position = "bottomright",
-      pal=pal,
-      values = Blk_data()[[input$Block_var]],
-      layerId = "Blocks",
-      title=input$Block_var
-    )
+  if (!input$Show_water){
+    Draw_block(dataset_blk(), Blk_data(), pal, input)
+  }
 })
+
+#######################
+#     add controller for poly layers
+#######################
 observe({
   print("--8--")
   # State <- input$State
@@ -320,6 +372,70 @@ observe({
     # hideGroup("Blocks")
 })
 
+
+#####################
+#   Display water depth
+#####################
+
+observe({
+  if (input$Show_water){
+    print(paste("Show Water --1--:", Select_grp()))
+    
+    #     Redraw polys empyy
+    
+  leafletProxy("map", data=dataset_grp()) %>% 
+    clearShapes() %>%
+    clearControls() %>% 
+    addPolygons(  # block groups
+      layerId = ~Blk_grp,
+      opacity = 0.8,
+      color="black",
+      weight = 1,
+      fillOpacity = 0.0,
+      fillColor = "white"
+    ) %>% 
+    addPolygons( #      Blocks
+      data = dataset_blk(),
+      color = "purple",
+      opacity = 1,
+      weight = 1,
+      fillOpacity = 0.0,
+      fillColor = "white"
+    )
+  
+  #   Read in tile(s)
+  
+  Tile <- Get_tile(Grp_data, Select_grp(), input$State, input$Depth)
+  
+  #   Display
+  
+  print(paste("---a---", Tiff_path, Tile))
+  tif = system.file(paste0(Tiff_path, Tile), package = "stars")
+  print("---b---")
+  x1 = stars::read_stars(paste0(Tiff_path, Tile))
+  # x1 = stars::read_stars(tif)
+  print("---c---")
+  # x1 = x1[, , , 1] # band 1
+  print("---d---")
+  # tmpfl = tempfile(fileext = ".tif")
+  print("---e---")
+
+  # stars::write_stars(stars::st_warp(x1, crs = 4326), tmpfl)
+  print("---f---")
+  
+  leafletProxy("map") %>% 
+    leafem::addGeotiff(
+      # file=tmpfl,
+      file=tif,
+      opacity=0.5,
+      colorOptions = leafem::colorOptions(
+        palette = "Blues",
+        na.color = "transparent"
+      )
+    )
+  
+  }
+})
 
 #####################
 #   Highlight and remove highlights for polygons from table
