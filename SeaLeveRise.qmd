@@ -105,8 +105,8 @@ Note: the grids are in EPSG:4269
 Census polygons are NAD83, EPSG:4269
 
 ```{r}
-State <- "MA"
-# Get blocks for State
+## AL, CT, DC, DE, FL, GA, LA, MA, MD, ME, MS, NC, NH, NJ, NY, PA, RI, SC, TX, VA
+State <- "GA"
 
 #     P16_002N  !!Total:!!Family households:
 #     P16_007N !!Total:!!Nonfamily households:
@@ -141,6 +141,13 @@ Counties_MA <- c("Barnstable", "Bristol", "Dukes", "Essex", "Middlesex", "Nantuc
 
 #   Fill counties variable with proper stuff
 Counties=eval(parse(text=paste0("Counties_", State)))
+
+```
+
+
+```{r}
+
+# Get blocks for State
 
 Blocks <- get_decennial(geography="block",
                         variables=c("P1_001N", "P16_002N", "P16_007N"),
@@ -262,7 +269,8 @@ saveRDS(All_stats, paste0(path, "All_stats_", State,".rds"))
 All_stats <- readRDS(paste0(path, "All_stats_", State,".rds"))
 
 All_stats2 <- All_stats %>% 
-  # mutate(Depth=as.numeric(Depth)) %>% 
+  #   Fix little oopsie
+  mutate(Depth=as.character(as.numeric(Depth))) %>%
   filter(Pop_blk>0) #   don't care if no one lives there
 
 All_stats2 %>% filter(Pop_blk<100) %>% 
@@ -304,21 +312,28 @@ BG_stats <- foo %>%
               T_NonFam_house=sum(NonFam_house_blk),
               T_Num=sum(Num),
               T_NumNA=sum(NumNA),
-              Raster=paste(Raster, collapse=","),
+              Rasters=paste(Raster, collapse=","),
               Num_blks=n(),
               Mean_grp=sum(Wvaluesum)/sum(Weights),
               Blocks=list(sort(unique(GEOID)))
               ) %>% 
-  mutate(Raster=paste( # clean up filename list
-                 unique(
-                  unlist(
-                   str_split(Raster, pattern=','))), collapse = ","))  
+  mutate(Rasters= paste(
+                    unique(
+                      unlist(
+                        str_split(
+                          str_remove_all( Rasters,
+                          "_slr_depth_[0-9_]+ft\\.tif_small\\.tif"),
+                          ","))), collapse=","))
+  # mutate(Rasters=paste( # clean up filename list
+  #                unique(
+  #                 unlist(
+  #                  str_split(Rasters, pattern=','))), collapse = ","))  
 
 #   Join block group stats to block dataframe and calculate more stuff and filter
 
 All_BG <- left_join(foo, BG_stats, by=c("Depth", "Blk_grp"), 
                   relationship="many-to-one") %>% 
-  select(!starts_with("Raster")) %>%
+  # select(!Raster)) %>%
   select(!Blocks) #%>% 
   # filter(Pop_blk>=25) %>%
   # filter(Fam_house_blk>=5) %>%
@@ -382,10 +397,18 @@ All_BG2 <- BG_stats %>%
               Fam_hou_at_risk=first(T_Fam_house),
               Flood_pct=100*first(T_Num)/
                 (first(T_Num)+first(T_NumNA)),
+              Rasters=list(sort(unique(unlist(Rasters)))),
               Blocks=list(sort(unique(unlist(Blocks))))
-              # Blocks=paste(sort(unique(GEOID)),collapse=", ")
     ) %>% 
   ungroup()
+
+
+# All_BG2[107,] %>% sf::st_drop_geometry() %>%  
+#   mutate(Rasters= list(unique(unlist(str_split(
+#            str_remove_all(
+#                   Rasters,  "_slr_depth_[0-9_]+ft\\.tif_small\\.tif"), ",")))))
+  # mutate(Rasters= str_remove(
+                  # str_split(Rasters, ","), "_slr_depth.*$"))
 
 #   Add block group stuff from ACS
 
