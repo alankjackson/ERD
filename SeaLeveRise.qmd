@@ -106,7 +106,7 @@ Census polygons are NAD83, EPSG:4269
 
 ```{r}
 ## AL, CT, DC, DE, FL, GA, LA, MA, MD, ME, MS, NC, NH, NJ, NY, PA, RI, SC, TX, VA
-State <- "GA"
+State <- "VA"
 
 #     P16_002N  !!Total:!!Family households:
 #     P16_007N !!Total:!!Nonfamily households:
@@ -511,21 +511,22 @@ tmap::tm_shape(All_stats2 %>% filter(str_starts(GEOID, "010030114191001")) %>%
 
 foo3 <- terra::rast(paste0(bigpath, "AL_slr_depth_10ft.tif_small.tif"))
 
-foo3 <- terra::crop(foo3, sf::st_as_sf(Block_data))
+foo3 <- terra::crop(foo3, sf::st_as_sf(Block_data_AL))
 
-# tmap::tmap_options(basemaps="OpenStreetMap")
-tmap_options(basemap.server = c("OpenStreetMap"))
+tmap::tmap_options(basemaps="OpenStreetMap")
+# tmap_options(basemap.server = c("OpenStreetMap"))
 
 tmap::tmap_mode("view") # set mode to interactive plots
 
 tmap::tm_shape(foo3) +
-  tmap::tm_raster(col_alpha=0.5,
-                  col.scale = tm_scale_categorical(n.max = 4, values = "brewer.blues",
-                                                   value.na = "red"),
-                  col.legend = tm_legend(title = "AL_slr_10ft"),
+  tmap::tm_raster(alpha=0.5,
+                  
+                  # col = tmap::tm_scale_categorical(n.max = 4, values = "brewer.blues",
+                                                   # value.na = "red"),
+                  # col.legend = tm_legend(title = "AL_slr_10ft"),
                   # col.legend="AL_slr_depth_10ft",
-                  # palette = "Blues",
-                  value.na=NULL,
+                  palette = "Blues",
+                  # value.na=NULL,
                   title = "foo3") +
 #  tmap_leaflet(
 #   tm_shape(foo3) +
