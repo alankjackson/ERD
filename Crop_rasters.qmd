@@ -110,7 +110,54 @@ for (State in States) {
   saveRDS(Groups, paste0(path, "New/Block_group_data_", State,".rds"))
 }
 
-#     
+#   Reproject and crop spatrasters (maybe even merge)
+
+State <- "GA"  # for testing
+
+#   reproject and save
+
+for (State in States) {
+
+  infiles <- list.files(path=bigpath, pattern=paste0("^",State,"_.*small*")) 
+
+  t1 <- proc.time()
+  i <- 0
+  deltaTs <- rep(NA, 10)
+
+  for (file in infiles) {
+    t2 <- proc.time()
+    deltaTs[i%%10+1] <- t2[3] - t1[3]
+    print(paste(file, "------", length(infiles)-i, "Time remaining =",
+          signif((length(infiles)-i)*mean(deltaTs, na.rm=TRUE, trim=0.2)/60, 3), "minutes"))
+  print(t2-t1)
+    t1 <- t2
+    i <-  i + 1
+    
+    #   Read in geotiff, reproject, and output
+    
+    df_tif <- terra::project(terra::rast(paste0(bigpath, file)), googlecrs)
+    
+    terra::writeRaster(df_tif, paste0(bigpath, "New/", file))
+    
+    terra::tmpFiles(remove=TRUE) # do some cleanup
+    
+    #   Free memory
+    gc()
+  }
+}
+
+Groups <- readRDS(paste0(path, "New/Block_group_data_", State,".rds")) %>% 
+  filter(Depth=="10")
+for (i in 1:nrow(Groups)){
+  # print(paste("---",str_split(Groups[i,]$Rasters, ",")))
+  Rasters <- str_split(Groups[i,]$Rasters[[1]], ",")[[1]]
+  if (length(Rasters)>1) {print(Groups[i,]$Rasters)
+  } else {
+      
+    }
+}
+
+
 
 ```
 
