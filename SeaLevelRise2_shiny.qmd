@@ -21,8 +21,8 @@ googlecrs <- "EPSG:4326"
 
 # path <- "/home/ajackson/Dropbox/Rprojects/TexasDioceseCreationCare/Data/"
 # Curated_path <- "/home/ajackson/Dropbox/Rprojects/Curated_Data_Files/"
-Curated_path <- "/home/ajackson/Dropbox/Rprojects/ERD/SeaLevel/"
-Tiff_path <- "/media/ajackson/extradrive1/SeaLevel/"
+Curated_path <- "/home/ajackson/Dropbox/Rprojects/ERD/SeaLevel/New/"
+Tiff_path <- "/media/ajackson/extradrive1/SeaLevel/New/"
 
 Google_notes <- "https://docs.google.com/document/d/1ZYLhbcxoM2DShvo-eewVF4UHyNHtJVhjPB6KRr6JFI4/edit?usp=sharing"
 
@@ -367,7 +367,7 @@ observe({
   print("--8--")
   # State <- input$State
   leafletProxy("map", data=dataset_blk()) %>% 
-    addLayersControl(overlayGroups = c("Block Grps", "Blocks"),
+    addLayersControl(overlayGroups = c("Block Grps", "Blocks", "Water"),
                    options = layersControlOptions(collapsed=F)) #%>%
     # hideGroup("Blocks")
 })
@@ -381,7 +381,7 @@ observe({
   if (input$Show_water){
     print(paste("Show Water --1--:", Select_grp()))
     
-    #     Redraw polys empyy
+    #     Redraw polys empty
     
   leafletProxy("map", data=dataset_grp()) %>% 
     clearShapes() %>%
@@ -410,9 +410,11 @@ observe({
   #   Display
   
   print(paste("---a---", Tiff_path, Tile))
-  tif = system.file(paste0(Tiff_path, Tile), package = "stars")
+  # tif = system.file(paste0(Tiff_path, Tile), package = "stars")
+  # tif <- terra::rast(paste0(Tiff_path, Tile))
+  tif <- paste0(Tiff_path, Tile)
   print("---b---")
-  x1 = stars::read_stars(paste0(Tiff_path, Tile))
+  # x1 = stars::read_stars(paste0(Tiff_path, Tile))
   # x1 = stars::read_stars(tif)
   print("---c---")
   # x1 = x1[, , , 1] # band 1
@@ -427,7 +429,8 @@ observe({
     leafem::addGeotiff(
       # file=tmpfl,
       file=tif,
-      opacity=0.5,
+      group="Water",
+      opacity=0.8,
       colorOptions = leafem::colorOptions(
         palette = "Blues",
         na.color = "transparent"
