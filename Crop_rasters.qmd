@@ -13,6 +13,7 @@ library(stringr)
 library(sf)
 library(tmap)
 library(terra)
+library(tidycensus)
 
 googlecrs <- "EPSG:4326"
 NAD83crs <- "EPSG:4269"
@@ -93,21 +94,23 @@ reproject and crop geotifs to each block
 
 ```{r}
 
-States <- c("AL", "CT", "DC", "DE", "FL", "GA", "LA", "MA", "MD", "ME", 
-"MS", "NC", "NH", "NJ", "NY", "PA", "RI", "SC", "TX", "VA")
+# States <- c("AL", "CT", "DC", "DE", "FL", "GA", "LA", "MA", "MD", "ME", 
+# States <- c("LA", "MA", "MD", "ME", 
+# "MS", "NC", "NH", "NJ", "NY", "PA", "RI", "SC", "TX", "VA")
+States <- c("FL")
 
 for (State in States) {
 
-  Blocks <- readRDS(paste0(path, "Block_data_", State,".rds"))
-  Groups <- readRDS(paste0(path, "Block_group_data_", State,".rds"))
+  Blocks <- readRDS(paste0(path, "Newer/Block_data_", State,".rds"))
+  Groups <- readRDS(paste0(path, "Newer/Block_group_data_", State,".rds"))
   
   Blocks <- st_transform(Blocks, googlecrs) %>% 
     mutate(Depth=as.character(as.numeric(Depth)))
   Groups <- st_transform(Groups, googlecrs) %>% 
     mutate(Depth=as.character(as.numeric(Depth)))
   
-  saveRDS(Blocks, paste0(path, "New/Block_data_", State,".rds"))
-  saveRDS(Groups, paste0(path, "New/Block_group_data_", State,".rds"))
+  saveRDS(Blocks, paste0(path, "Newer/Block_data_", State,".rds"))
+  saveRDS(Groups, paste0(path, "Newer/Block_group_data_", State,".rds"))
 }
 
 #   Reproject and crop spatrasters (maybe even merge)
@@ -146,21 +149,260 @@ for (State in States) {
   }
 }
 
-Groups <- readRDS(paste0(path, "New/Block_group_data_", State,".rds")) %>% 
-  filter(Depth=="10")
-for (i in 1:nrow(Groups)){
-  # print(paste("---",str_split(Groups[i,]$Rasters, ",")))
-  Rasters <- str_split(Groups[i,]$Rasters[[1]], ",")[[1]]
-  if (length(Rasters)>1) {print(Groups[i,]$Rasters)
-  } else {
-      
-    }
-}
+# Groups <- readRDS(paste0(path, "New/Block_group_data_", State,".rds")) %>% 
+#   filter(Depth=="10")
+# for (i in 1:nrow(Groups)){
+#   # print(paste("---",str_split(Groups[i,]$Rasters, ",")))
+#   Rasters <- str_split(Groups[i,]$Rasters[[1]], ",")[[1]]
+#   if (length(Rasters)>1) {print(Groups[i,]$Rasters)
+#   } else {
+#       
+#     }
+# }
 
 
 
 ```
 
+##        Drop incidental overlaps
+
+```{r}
+
+States <- c("AL", "FL", "GA", "LA", "MA", "MD", "ME", "MS", "NC", "NH", "NJ", "NY", "PA", "RI", "SC", "TX", "VA")
+States <- c("FL")
+
+for (State in States) {
+  print(paste("State:", State))
+  
+  All_stats <- readRDS(paste0(path, "All_stats_", State, ".rds"))
+  
+  All_stats2 <- All_stats %>% 
+    #   Fix little oopsie
+    mutate(Depth=as.character(as.numeric(Depth))) %>%
+    filter(Pop_blk>0) #   don't care if no one lives there
+  
+  #   Combine records with identical block GEOID's
+  
+  foo <- All_stats2 %>% 
+    sf::st_drop_geometry() %>% # geometry can be the only difference
+    mutate(Numfrac=Num/(Num+NumNA)) %>% 
+    # filter(Numfrac>0.02) %>% 
+    filter(Num>10) %>%
+    group_by(GEOID, Depth) %>% 
+      summarize(NAME=first(NAME),
+                Pop_blk=first(Pop_blk),
+                Wmean=max(Wmean),
+                Wvaluesum=sum(Wvaluesum),
+                Weights=sum(Weights),
+                Raster=Raster[which.max(Num)], # pick dominant raster
+                Fam_house_blk=first(Fam_house_blk),
+                NonFam_house_blk=first(NonFam_house_blk),
+                Error=(min(Num))/(max(Num)),
+                Hits=paste(Num, collapse=","),
+                HitPct=paste(Num/(Num+NumNA), collapse=","),
+                NumNA=sum(NumNA),
+                Num=sum(Num))  
+  
+  #     And some were found - blocks that get cut by sea level tiles
+  
+  #     Calculate Block-Groups
+  
+  foo <- foo %>% 
+    mutate(Blk_grp=str_sub(GEOID, 1, 12)) %>% 
+    filter(Pop_blk>=25) %>%
+    filter(Fam_house_blk>=5) %>%
+    mutate(Flood_pct=signif(100*Num/(NumNA+Num),2)) %>% 
+    filter(Flood_pct>=5)
+  
+  #   Calculate some stats by block group 
+  
+  BG_stats <- foo %>% 
+    group_by(Blk_grp, Depth) %>% 
+      summarise(T_pop=sum(Pop_blk), # Pop of blocks at risk
+                T_Fam_house=sum(Fam_house_blk),
+                T_NonFam_house=sum(NonFam_house_blk),
+                T_Num=sum(Num),
+                T_NumNA=sum(NumNA),
+                Rasters=first(Raster),
+                Num_blks=n(),
+                Mean_grp=sum(Wvaluesum)/sum(Weights),
+                Blocks=list(sort(unique(GEOID)))
+                )  
+  
+  #   Join block group stats to block dataframe and calculate more stuff and filter
+  
+  All_BG <- left_join(foo, BG_stats, by=c("Depth", "Blk_grp"), 
+                    relationship="many-to-one") %>% 
+    select(!Blocks)  
+  
+  #   Final dataset to be saved by block
+  
+  Block_geom <- All_stats2 %>% 
+    filter(Depth=="10") %>% 
+    group_by(GEOID) %>% 
+      summarise(GEOID=first(GEOID)) %>% 
+    ungroup() %>% 
+    select(GEOID, geometry)
+  
+  Block_data <- All_BG %>% 
+    mutate(Wmean=signif(Wmean, 1)) %>% 
+    select(GEOID, Depth, NAME, Pop_blk, Wmean, Fam_house_blk,
+           NonFam_house_blk, Blk_grp, 
+           Flood_pct)  
+  
+    #   Add geometry
+  
+  Block_data <- inner_join(Block_data, Block_geom, by=join_by(GEOID),
+                           relationship="many-to-one") %>% 
+    sf::st_as_sf()
+  
+  saveRDS(Block_data, paste0(path, "Newer/Block_data_", State,".rds"))
+  
+  # Now let's prepare the block-group data
+  
+  acs_vars <- c(Pop="B01001_001", # ACS population estimate
+                Med_inc="B19013_001", # median household income, blk grp
+                Per_cap_inc="B19301_001", # Per capita income, blk grp
+                Fam="B17010_001", # Families, blk grp
+                Fam_in_poverty="B17010_002", # Families in poverty, blk grp
+                Aggreg_inc="B19025_001", # Aggregate household income, blk grp
+                Households="B11012_001", # Households, blk grp
+                Med_age="B01002_001") # median age, blk grp
+  ACS <- get_acs(geography="block group",
+                 variables=acs_vars,
+                 year=2020,
+                 state=State,
+                 county=Counties,
+                 output="wide",
+                 geometry=TRUE) 
+  
+  ACS <- ACS %>% 
+    mutate(Pct_poverty=100*Fam_in_povertyE/FamE) %>% 
+    select(GEOID, Pop_acs=PopE, Med_inc=Med_incE, Per_cap_in=Per_cap_incE,
+           Fam=FamE, Fam_in_poverty=Fam_in_povertyE, Aggreg_inc=Aggreg_incE,
+           Pct_poverty, Households=HouseholdsE, Med_ageE=Med_ageE)
+  
+  #   Consolidate data by block group
+  
+  # All_BG2 <- All_BG %>% 
+  All_BG2 <- BG_stats %>% 
+    group_by(Depth, Blk_grp) %>% 
+      summarise(Pop_at_risk=first(T_pop),
+                Mean_depth=first(Mean_grp),
+                Fam_hou_at_risk=first(T_Fam_house),
+                Flood_pct=100*first(T_Num)/
+                  (first(T_Num)+first(T_NumNA)),
+                Rasters=first(Rasters),
+                Blocks=list(sort(unique(unlist(Blocks))))
+      ) %>% 
+    ungroup()
+  
+  #   Add block group stuff from ACS
+  
+  All_BG2 <- All_BG2 %>% 
+    left_join(., ACS, by=join_by(Blk_grp==GEOID)) %>% 
+    mutate(Pct_pop_at_risk=signif(100*Pop_at_risk/Pop_acs, 3)) %>% 
+    mutate(Pct_poverty=signif(Pct_poverty, 3)) %>% 
+    mutate(Mean_depth=signif(Mean_depth,3)) %>% 
+    sf::st_as_sf()
+    
+  saveRDS(All_BG2, paste0(path, "Newer/Block_group_data_", State,".rds"))
+  
+}
+
+```
+
+##        Compact rasters again, by another factor of 4
+
+```{r}
+
+############    function
+
+#   This function takes the 50 meter resolution inundation files
+#   and converts them to 100 meter resolution - a 4:1 compaction.
+#   I use the median value of water depth as that will be less
+#   sensitive to the data not having a gaussian distribution.
+
+Prep_tif <- function(filename) {
+  
+  df_tif <- terra::aggregate(terra::rast(filename), 
+                           fact=2, fun="median", na.rm=TRUE)
+  
+  return(df_tif)
+} ###########   end function Prep_tif
+
+#   Run function for each geotif
+
+infiles <- list.files(path=paste0(bigpath,"New/"), pattern=(".*\\.tif$")) 
+
+t1 <- proc.time()
+i <- 0
+deltaTs <- rep(NA, 10)
+
+for (file in infiles) {
+  t2 <- proc.time()
+  deltaTs[i%%10+1] <- t2[3] - t1[3]
+  print(paste(file, "------", length(infiles)-i, "Time remaining =",
+        signif((length(infiles)-i)*mean(deltaTs, na.rm=TRUE, trim=0.2)/60, 3), "minutes"))
+print(t2-t1)
+  t1 <- t2
+  i <-  i + 1
+  
+  #   Read in geotiff, reduce by factor of 4, and output
+  
+  print("Prep Tif")
+  df_tif <- Prep_tif(paste0(bigpath, "New/", file))
+  
+  terra::writeRaster(df_tif, paste0(bigpath, "Newer/", file), overwrite=TRUE)
+  
+  terra::tmpFiles(remove=TRUE) # do some cleanup
+  
+  #   Free memory
+  
+  gc()
+
+}
+
+
+```
+
+##        Repair Florida
+
+```{r}
+
+foobar <- 
+  readRDS(paste0(path, "Newer/Block_group_data_FL.rds")) %>% 
+  mutate(Rasters=str_replace(Rasters, "10_0ft", "10ft")) %>% 
+  mutate(Rasters=str_replace(Rasters, "0_0ft", "0ft")) %>% 
+  mutate(Rasters=str_replace(Rasters, "([1-9])_0ft", "\\1ft"))  
+  # mutate(Rasters=stringr::str_replace(Rasters, "FL_East", "FL_East_slr_depth")) %>% 
+  # mutate(Rasters=stringr::str_replace(Rasters, "FL_West", "FL_West_slr_depth"))  
+  # mutate(Rasters=str_replace(Rasters, "depthft", "depth_"))
+    # mutate(Z=stringr::str_replace(Depth, "\\.", "_")) %>%
+  # mutate(filename=stringr::str_extract(Rasters, "^FL[A-Za-z_]+")) %>% 
+    # mutate(Rasters=paste0(filename, Z, "ft.tif_small.tif")) %>%
+  # select(-Z, -filename)
+  
+  saveRDS(foobar, paste0(path, "Newer/Block_group_data_FL.rds"))
+```
+
+##    Check files for raster errors
+
+```{r}
+
+infiles <- list.files(path=paste0(path, "Newer/"), pattern=paste0("^Block_group_.*")) 
+
+for (file in infiles) {
+  foo <- readRDS(paste0(path, "Newer/", file))
+  print(paste("file:", file))
+  for (i in 1:nrow(foo)) {
+    if (!file.exists(paste0(bigpath, "Newer/", foo[i,]$Rasters))) {
+      print(paste("No match:", foo[i,]$Rasters))
+    }
+  }
+}
+
+```
 
 
 
