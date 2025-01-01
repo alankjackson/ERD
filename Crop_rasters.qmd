@@ -169,7 +169,7 @@ for (State in States) {
 ```{r}
 
 States <- c("AL", "FL", "GA", "LA", "MA", "MD", "ME", "MS", "NC", "NH", "NJ", "NY", "PA", "RI", "SC", "TX", "VA")
-States <- c("FL")
+States <- c("FL", "TX", "NC")
 
 for (State in States) {
   print(paste("State:", State))
@@ -406,6 +406,48 @@ for (file in infiles) {
 
 
 
+##    Check files for more raster errors
+
+Look for cases where the Depth field does not match the Raster name 
+
+```{r}
+
+infiles <- list.files(path=paste0(path, "Newer/"), pattern=paste0("^Block_group_.*")) 
+
+for (file in infiles) {
+  foo <- readRDS(paste0(path, "Newer/", file))
+  print(paste("file:", file))
+  for (i in 1:nrow(foo)) {
+    Z <- stringr::str_replace(foo[i,]$Depth, "\\.", "_")
+    if (!stringr::str_detect(foo[i,]$Rasters, paste0("_", Z, "ft"))) {
+      print(paste("No match:", Z, foo[i,]$Rasters))
+    }
+  }
+}
+
+```
+
+##    Repair allstats files for selected states
+
+FL, NC, and TX
+
+```{r}
+
+for (State in c("NC", "TX", "FL")) {
+  print(paste0(path, "Newer/Block_group_data_", State))
+  foo <- readRDS(paste0(path, "Newer/Block_group_data_", State, ".rds"))
+  foo2 <- foo %>% 
+    mutate(newdepth=stringr::str_extract(Rasters, "\\d_\\d(?=f)|\\d+(?=f)")) %>% 
+    # mutate(Depth=as.character(as.numeric(newdepth))) %>%
+    mutate(Depth=stringr::str_replace(newdepth, "_", ".")) %>% 
+    mutate(Depth=stringr::str_remove(Depth, "_0$")) %>% 
+    select(-newdepth)
+  
+  saveRDS(foo2, paste0(path, "Newer/Block_group_data_", State, ".rds"))
+}
+
+
+```
 
 
 
