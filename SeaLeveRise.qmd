@@ -37,7 +37,7 @@ NAD83crs <- "EPSG:4269"
 path <- "/home/ajackson/Dropbox/Rprojects/ERD/SeaLevel/"
 Curated_path <- "/home/ajackson/Dropbox/Rprojects/Curated_Data_Files/"
 mirror <- "/home/ajackson/Dropbox/mirrors/ajackson/ERD/"
-bigpath <- "/media/ajackson/extradrive1/SeaLevel/"
+bigpath <- "/media/ajackson/extradrive1/SeaLevel/New/"
 
 ############    function
 
@@ -106,7 +106,7 @@ Census polygons are NAD83, EPSG:4269
 
 ```{r}
 ## AL, CT, DC, DE, FL, GA, LA, MA, MD, ME, MS, NC, NH, NJ, NY, PA, RI, SC, TX, VA
-State <- "FL"
+State <- "TX"
 
 #     P16_002N  !!Total:!!Family households:
 #     P16_007N !!Total:!!Nonfamily households:
@@ -160,6 +160,8 @@ Blocks <- get_decennial(geography="block",
   select(GEOID, NAME, Pop_blk = P1_001N, 
                       Fam_house_blk = P16_002N, 
                       NonFam_house_blk = P16_007N)
+
+Blocks <- st_transform(Blocks, googlecrs)  
 ```
 
 #       Compact geotiffs
@@ -211,6 +213,10 @@ used, so that it can be walked back later.
 
 ```{r}
 
+# State <- "TX"
+# State <- "FL"
+# State <- "NC"
+
 All_stats=NULL
 area_flag <- "None" # this will tell when we encounter a new area
 infiles <- list.files(path=bigpath, pattern=paste0("^",State,"_.*small*")) 
@@ -228,7 +234,11 @@ print(t2-t1)
   t1 <- t2
   i <-  i + 1
   area <- str_extract(file, "^\\w*_slr")
-  depth <- str_replace(str_extract(file, "\\d_\\d|\\d+"), "_", ".")
+  ###################   following line is bad
+  # depth <- str_replace(str_extract(file, "\\d_\\d|\\d+"), "_", ".")
+  depth <- str_replace(str_extract(file, "\\d_\\d(?=f)|\\d+(?=f)"), "_", ".")
+  depth=as.character(as.numeric(depth))
+  
   
   df_tif <- terra::rast(paste0(bigpath, file))
 
@@ -237,7 +247,7 @@ print(t2-t1)
   
   if (area_flag != area) {
     print("Trim")
-    terra::gdalCache(size = 10000)
+    terra::gdalCache(size = 20000)
     foo <- prioritizr::intersecting_units(Blocks, df_tif)
     Blocks_trim <- Blocks[foo,]
     area_flag <- area
@@ -286,11 +296,12 @@ foo <- All_stats2 %>%
               Wmean=max(Wmean),
               Wvaluesum=sum(Wvaluesum),
               Weights=sum(Weights),
-              Raster=paste(unique(Raster), collapse=","),
+              # Raster=paste(unique(Raster), collapse=","),
               Fam_house_blk=first(Fam_house_blk),
               NonFam_house_blk=first(NonFam_house_blk),
               NumNA=sum(NumNA),
-              Num=sum(Num))  
+              Num=sum(Num),
+              Raster=Raster[which.max(Num)]) # pick dominant raster
 
 #     And some were found - blocks that get cut by sea level tiles
 
@@ -312,18 +323,19 @@ BG_stats <- foo %>%
               T_NonFam_house=sum(NonFam_house_blk),
               T_Num=sum(Num),
               T_NumNA=sum(NumNA),
-              Rasters=paste(Raster, collapse=","),
+              # Rasters=paste(Raster, collapse=","),
+              Rasters=first(Raster),
               Num_blks=n(),
               Mean_grp=sum(Wvaluesum)/sum(Weights),
               Blocks=list(sort(unique(GEOID)))
-              ) %>% 
-  mutate(Rasters= paste(
-                    unique(
-                      unlist(
-                        str_split(
-                          str_remove_all( Rasters,
-                          "_slr_depth_[0-9_]+ft\\.tif_small\\.tif"),
-                          ","))), collapse=","))
+              ) #%>% 
+  # mutate(Rasters= paste(
+  #                   unique(
+  #                     unlist(
+  #                       str_split(
+  #                         str_remove_all( Rasters,
+  #                         "_slr_depth_[0-9_]+ft\\.tif_small\\.tif"),
+  #                         ","))), collapse=","))
   # mutate(Rasters=paste( # clean up filename list
   #                unique(
   #                 unlist(
@@ -333,12 +345,7 @@ BG_stats <- foo %>%
 
 All_BG <- left_join(foo, BG_stats, by=c("Depth", "Blk_grp"), 
                   relationship="many-to-one") %>% 
-  # select(!Raster)) %>%
-  select(!Blocks) #%>% 
-  # filter(Pop_blk>=25) %>%
-  # filter(Fam_house_blk>=5) %>%
-  # mutate(Flood_pct=signif(100*Num/(NumNA+Num),2)) #%>% 
-  # filter(Flood_pct>=5)
+  select(!Blocks)  
 
 #   Final dataset to be saved by block
 
@@ -397,7 +404,8 @@ All_BG2 <- BG_stats %>%
               Fam_hou_at_risk=first(T_Fam_house),
               Flood_pct=100*first(T_Num)/
                 (first(T_Num)+first(T_NumNA)),
-              Rasters=list(sort(unique(unlist(Rasters)))),
+              Rasters=first(Rasters),
+              # Rasters=list(sort(unique(unlist(Rasters)))),
               Blocks=list(sort(unique(unlist(Blocks))))
     ) %>% 
   ungroup()
