@@ -37,10 +37,8 @@ Local_test <- TRUE
 DataLocation <- "https://www.ajackson.org/ERD/"
 
 if ( Local_test ) {
-  df_grp <- readRDS(paste0(Curated_path, "Block_group_data_AL.rds")) #%>%
-    # sf::st_as_sf()
-  df_blk <- readRDS(paste0(Curated_path, "Block_data_AL.rds")) #%>%
-    # sf::st_as_sf()
+  df_grp <- readRDS(paste0(Curated_path, "Block_group_data_AL.rds")) 
+  df_blk <- readRDS(paste0(Curated_path, "Block_data_AL.rds")) 
 } else {
   # z <- url(paste0(DataLocation, "UCS_sfdata.rds"), method="libcurl")
   df_grp <- readRDS(z)
@@ -86,9 +84,10 @@ Row_diff <- NULL  # Row deselected from table
 # "
 
 Draw_blkgrp <- function(dataset, Grp_data, pal){
+  print("---- draw groups")
   leafletProxy("map", data=dataset) %>% 
     clearShapes() %>%
-    clearControls() %>% 
+    clearControls() %>%
     addPolygons(  # block groups
       group = "Block Grps",
       layerId = ~Blk_grp,
@@ -113,9 +112,11 @@ Draw_blkgrp <- function(dataset, Grp_data, pal){
     )
 }
 
+  
 Draw_block <- function(dataset, Blk_data, pal, input){
+  print("---- draw block")
   leafletProxy("map", data=dataset) %>% 
-    removeControl("Blocks") %>%
+    # removeControl(~GEOID) %>%
     addPolygons( #      Blocks
     group = "Blocks",
     layerId = ~GEOID,
@@ -135,7 +136,7 @@ Draw_block <- function(dataset, Blk_data, pal, input){
       position = "bottomright",
       pal=pal,
       values = Blk_data[[input$Block_var]],
-      layerId = "Blocks",
+      layerId = ~GEOID,
       title=input$Block_var
     )  
 }
@@ -144,6 +145,7 @@ Get_tile <- function(Grp_id, Grp_data,  input){
   i <- which(State_df$States==input$State)
   State <- State_df[i,]$State_abbr
   print(paste("Get_tile:", Grp_id, input$State, input$Depth))
+  print(Grp_data[Grp_data$Blk_grp==Grp_id,])
   files <- Grp_data %>% 
     filter(Blk_grp==Grp_id) %>% 
     filter(Depth==input$Depth) %>%
@@ -157,17 +159,27 @@ Get_tile <- function(Grp_id, Grp_data,  input){
 }
 
 Draw_water <- function(tif, input){
+  print("*******draw water****************")
   print(tif)
-  leafletProxy("map") %>%
+  center <- input$map_center
+  old_zoom <- input$map_zoom
+  print(paste("zoom1=", old_zoom, center))
+  foo <- leafletProxy("map") %>%
     leafem::addGeotiff(
       file=tif,
       group="Water",
       opacity=0.8,
+      autozoom = FALSE,
       colorOptions = leafem::colorOptions(
         palette = "Blues",
         na.color = "transparent"
       )
-   )  
+   ) %>% 
+   setView(lng=as.numeric(center[["lng"]]), 
+           lat=as.numeric(center[["lat"]]), 
+           zoom=as.numeric(old_zoom))
+  print(paste("zoom2=", old_zoom, input$zoom, center))
+  foo
 }
 
 make_URL <- function(MAPID, input){
@@ -268,25 +280,16 @@ DT::dataTableOutput('data')
 
 df_grp <- reactive({
     print("============   read in grp data ==============")
+  print(paste("State=", input$State))
+  i <- which(State_df$States==input$State)
+  print(paste0("Read in ", "Block_group_data_",State_df[i,]$State_abbr,".rds"))
   if ( Local_test ) {
-    print(paste("State=", input$State))
-    i <- which(State_df$States==input$State)
-    print(paste0("Read in ", "Block_group_data_",State_df[i,]$State_abbr,".rds"))
     #     Read block-group data off disk
-  foo <- readRDS(paste0(Curated_path,
+    foo <- readRDS(paste0(Curated_path,
                  paste0("Block_group_data_", State_df[i,]$State_abbr,".rds")))
-  # Initial_select <- foo %>% 
-  #     sf::st_drop_geometry() %>% 
-  #     filter(Depth=="0") %>% 
-  #     select(Blk_grp, Mean_depth) %>% 
-  #     arrange(desc(Mean_depth))
-  # Initial_select <- Initial_select[1,]$Blk_grp
-  # Max_poverty <<- 5*round((max(foo$Pct_poverty, na.rm=TRUE)+2.5)/5)
-  # print(paste("--0--", Max_poverty, input$Pct_poverty))
-  # keep_tif <<- input$State # reset selected tile to none
+  }
   keep_tif <<- "None"
   foo
-  }
 })
 
 df_blk <- reactive({
@@ -295,8 +298,9 @@ df_blk <- reactive({
     i <- which(State_df$States==input$State)
     print(paste0("Read in ", "Block_data_", State_df[i,]$State_abbr,".rds"))
     #     Read block data off disk
-  readRDS(paste0(Curated_path,
+  foo <- readRDS(paste0(Curated_path,
                  paste0("Block_data_",State_df[i,]$State_abbr,".rds")))
+  foo
   }
 })
 
@@ -304,12 +308,12 @@ df_blk <- reactive({
 
 observe({
   print("original map")
-  Bbox <- sf::st_bbox(df_blk())
+  Bbox <- sf::st_bbox(df_grp())
       #   Build empty master map by state
   output$map <- leaflet::renderLeaflet({
     print("--5--")
     leaflet() %>% addTiles() %>%
-    fitBounds(Bbox[["xmin"]], Bbox[["ymin"]], 
+    fitBounds(Bbox[["xmin"]], Bbox[["ymin"]],
               Bbox[["xmax"]], Bbox[["ymax"]])
   })
   keep_tif <<- "None"
@@ -326,6 +330,10 @@ dataset_grp <- reactive({
       # filter(Pct_poverty>=min(input$Pct_poverty, Max_poverty-1))
       filter(Pct_poverty>=input$Pct_poverty)
   print(paste("--1.1--", nrow(foo)))
+  updateSliderInput(session, "Pct_poverty", #value = 10,
+          min = 5, 
+          max = max(5*round((max(foo$Pct_poverty, na.rm=TRUE)+2.5)/5),15),
+          step = 5)
   foo
 })
 
@@ -340,14 +348,14 @@ dataset_blk <- reactive({
   # print(foo)
   print("--3--")
   # Active_grps <- Grp_data()$Blk_grp
-  foo <- df_blk() %>% filter(Blk_grp %in% Grp_data()$Blk_grp) 
+  foo <- df_blk() %>% filter(Blk_grp %in% Grp_data()$Blk_grp) %>% 
+                      filter(Depth==input$Depth)
   print(paste("---3.1---", nrow(foo)))
   foo
 })
 
 Blk_data <- reactive({
   print("--4--")
-  # print(summary(dataset_blk()))
   dataset_blk() %>% sf::st_drop_geometry()
 })
 
@@ -378,11 +386,22 @@ tif <- reactive({ #   get a tile filename
 #######################
 #     Draw Block Group polys
 #######################
+
+# observe({ # clear old polys
+#   print("--clear old polys--")
+#   input$State # trigger
+#   
+#   leafletProxy("map") %>% 
+#     clearShapes() %>%
+#     clearControls()  
+# })
+
 observe({
   print("--6--")
   # foo <- dataset_grp()[1,] # trigger a redraw
   #   Reset color scale
   if (nrow(Grp_data())==0) {return()}
+  
   pal <- colorNumeric("YlOrBr",
                       # c(5,
                       # max(Grp_data()[["Pct_poverty"]], na.rm=TRUE)),
@@ -399,8 +418,12 @@ observe({
 observe({
   print("--7--")
   foo <- dataset_grp()[1,] # trigger a redraw
+  # foo <- dataset_blk()[1,] # trigger a redraw
   print(paste("Block_var:", input$Block_var))
-  if (nrow(Grp_data())==0) {return()}
+  if (nrow(Grp_data())==0) {
+    print("No grp data")
+    return()
+  }
   
   pal <- colorNumeric("Greys",
                       c(min(Blk_data()[[input$Block_var]], na.rm=TRUE),
@@ -429,7 +452,7 @@ observe({
 
 observe({
 
-  print(paste("tif stuff:", tif(), Tiff_path, length(tif())))
+  print(paste("tif stuff:", tif(), Tiff_path, length(tif()), keep_tif))
   
   print(tif())
   
@@ -438,6 +461,12 @@ observe({
   
   if (is.null(tif())) { # first pass it is null, but never again
     print("Null tif()")
+    keep_tif <<- "Next"
+    return()
+  }
+  
+  if (is.na(tif())) { #  nothing foun d
+    print("NA tif()")
     keep_tif <<- "Next"
     return()
   }
