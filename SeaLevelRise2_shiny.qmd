@@ -16,8 +16,8 @@ library(stringr)
 library(leaflet)
 
 ############################################
-shiny::devmode(TRUE)
-options(shiny.fullstacktrace = TRUE)
+# shiny::devmode(TRUE)
+# options(shiny.fullstacktrace = TRUE)
 # options(shiny.minified = TRUE)
 ############################################
 
@@ -30,19 +30,23 @@ Tiff_path <- "/media/ajackson/extradrive1/SeaLevel/Newer/"
 
 Google_notes <- "https://docs.google.com/document/d/1ZYLhbcxoM2DShvo-eewVF4UHyNHtJVhjPB6KRr6JFI4/edit?usp=sharing"
 
-Local_test <- TRUE
+Local_test <- FALSE
 
 #   Directory where data is stored
 
-DataLocation <- "https://www.ajackson.org/ERD/"
+DataLocation <- "https://www.ajackson.org/ERD/Sealevel/"
 
 if ( Local_test ) {
   df_grp <- readRDS(paste0(Curated_path, "Block_group_data_AL.rds")) 
   df_blk <- readRDS(paste0(Curated_path, "Block_data_AL.rds")) 
 } else {
-  # z <- url(paste0(DataLocation, "UCS_sfdata.rds"), method="libcurl")
+  z <- url(paste0(DataLocation, "Block_group_data_AL.rds"), method="libcurl")
   df_grp <- readRDS(z)
   close(z)
+  z <- url(paste0(DataLocation, "Block_data_AL.rds"), method="libcurl")
+  df_blk <- readRDS(z)
+  close(z)
+  Tiff_path <- DataLocation
 }
 
 Depths <- as.character((0:20)/2)
@@ -55,14 +59,6 @@ State_abbr <-  c("AL", "FL", "GA", "LA", "MA", "MD", "ME", "MS", "NC", "NH",
                  "NJ", "NY", "PA", "RI", "SC", "TX", "VA")
 
 State_df <- as_tibble(cbind(States, State_abbr))
-
-# Initial_select <- df_grp %>% 
-#       sf::st_drop_geometry() %>% 
-#       filter(Depth=="0") %>% 
-#       filter(Pct_poverty>=10) %>% 
-#       select(Blk_grp, Mean_depth) %>% 
-#       arrange(desc(Mean_depth))
-# Initial_select <- Initial_select[1,]$Blk_grp
 
 keep_tif <<- "None"
 
@@ -84,7 +80,7 @@ Row_diff <- NULL  # Row deselected from table
 # "
 
 Draw_blkgrp <- function(dataset, Grp_data, pal){
-  print("---- draw groups")
+  print("---- draw groups")#
   leafletProxy("map", data=dataset) %>% 
     clearShapes() %>%
     clearControls() %>%
@@ -109,19 +105,29 @@ Draw_blkgrp <- function(dataset, Grp_data, pal){
       pal=pal,
       values = ~Pct_poverty,
       title="% Poverty"
+    )  
+}
+
+Draw_dots <- function(dataset) {
+  centroids <- sf::st_centroid(dataset)
+  leafletProxy("map", data=centroids) %>% 
+    clearMarkers() %>%
+    addCircleMarkers(
+      radius=1,
+      color="black"
     )
+  
 }
 
   
 Draw_block <- function(dataset, Blk_data, pal, input){
   print("---- draw block")
   leafletProxy("map", data=dataset) %>% 
-    # removeControl(~GEOID) %>%
     addPolygons( #      Blocks
     group = "Blocks",
     layerId = ~GEOID,
     color = "purple",
-    opacity = 0.5,
+    opacity = 0.4,
     weight = 1,
     fillOpacity = 0.5,
     fillColor = ~pal(Blk_data[[input$Block_var]]),
@@ -149,11 +155,7 @@ Get_tile <- function(Grp_id, Grp_data,  input){
   files <- Grp_data %>% 
     filter(Blk_grp==Grp_id) %>% 
     filter(Depth==input$Depth) %>%
-    select(Rasters, Blk_grp, Depth) #%>%
-    # separate_longer_delim(Rasters, delim=",") %>%
-    # mutate(filename=paste0(Rasters, "_slr_depth_",
-    #                        str_replace(Depth, "\\,", "_"),
-    #                        "ft.tif_small.tif"))
+    select(Rasters, Blk_grp, Depth) 
   print(paste("Get_tile file", files[1,]$Rasters))
   files[1,]$Rasters
 }
@@ -163,18 +165,38 @@ Draw_water <- function(tif, input){
   print(tif)
   center <- input$map_center
   old_zoom <- input$map_zoom
-  print(paste("zoom1=", old_zoom, center))
-  foo <- leafletProxy("map") %>%
-    leafem::addGeotiff(
-      file=tif,
-      group="Water",
-      opacity=0.8,
-      autozoom = FALSE,
-      colorOptions = leafem::colorOptions(
-        palette = "Blues",
-        na.color = "transparent"
-      )
-   ) %>% 
+  print(paste("zoom1=", old_zoom, center)) 
+  
+  if (Local_test) {
+    foo <- leafletProxy("map") %>%
+      leafem::addGeotiff(
+        file=tif,
+        group="Water",
+        opacity=0.8,
+        autozoom = FALSE,
+        colorOptions = leafem::colorOptions(
+          palette = "Blues",
+          na.color = "transparent"
+        )
+     ) 
+  } else {
+    print(paste("URL:", tif))
+    file <- terra::rast(paste0("/vsicurl/", tif))
+    terra::writeRaster(file, "tmpfile.tif", overwrite=TRUE)
+    foo <- leafletProxy("map") %>%
+      leafem::addGeotiff(
+        # url=tif,
+        file="tmpfile.tif",
+        group="Water",
+        opacity=0.8,
+        autozoom = FALSE,
+        colorOptions = leafem::colorOptions(
+          palette = "Blues",
+          na.color = "transparent"
+        )
+     ) 
+  }
+  foo <- foo %>% 
    setView(lng=as.numeric(center[["lng"]]), 
            lat=as.numeric(center[["lat"]]), 
            zoom=as.numeric(old_zoom))
@@ -236,13 +258,6 @@ actionButton(
 
 br()
 
-# checkboxInput('Show_water', HTML('<b>Show water depths on mouse click</b>'), value=FALSE)
-# 
-# br()
-
-# 
-# checkboxInput('Show_blks', 'Show Blocks on mouse click', value=FALSE)
-
 ```
 
 Data from NOAA Sea Level Rise datasets plus the 2020 ACS 
@@ -287,6 +302,12 @@ df_grp <- reactive({
     #     Read block-group data off disk
     foo <- readRDS(paste0(Curated_path,
                  paste0("Block_group_data_", State_df[i,]$State_abbr,".rds")))
+  } else {
+    z <- url(paste0(DataLocation, "Block_group_data_", 
+                                   State_df[i,]$State_abbr,".rds"), 
+             method="libcurl")
+    foo <- readRDS(z)
+    close(z)
   }
   keep_tif <<- "None"
   foo
@@ -294,17 +315,21 @@ df_grp <- reactive({
 
 df_blk <- reactive({
     print("============   read in blk data ==============")
+  i <- which(State_df$States==input$State)
   if ( Local_test ) {
-    i <- which(State_df$States==input$State)
-    print(paste0("Read in ", "Block_data_", State_df[i,]$State_abbr,".rds"))
+  print(paste0("Read in ", "Block_data_", State_df[i,]$State_abbr,".rds"))
     #     Read block data off disk
   foo <- readRDS(paste0(Curated_path,
                  paste0("Block_data_",State_df[i,]$State_abbr,".rds")))
-  foo
+  } else {
+    z <- url(paste0(DataLocation, "Block_data_", 
+                                   State_df[i,]$State_abbr,".rds"), 
+             method="libcurl")
+    foo <- readRDS(z)
+    close(z)
   }
+  foo
 })
-
-# Bbox <- reactive({sf::st_bbox(df_blk())})
 
 observe({
   print("original map")
@@ -324,7 +349,6 @@ observe({
 ##################################
 
 dataset_grp <- reactive({
-  # print(paste("--1--", Max_poverty, input$Pct_poverty))
   print(paste("--1--", input$Pct_poverty))
   foo <- df_grp() %>% filter(Depth==input$Depth) %>%
       # filter(Pct_poverty>=min(input$Pct_poverty, Max_poverty-1))
@@ -343,11 +367,7 @@ Grp_data <- reactive({
 })
 
 dataset_blk <- reactive({
-  # foo <- dataset_grp()[1,] # trigger a redraw
-  # foo <- input$Pct_poverty
-  # print(foo)
   print("--3--")
-  # Active_grps <- Grp_data()$Blk_grp
   foo <- df_blk() %>% filter(Blk_grp %in% Grp_data()$Blk_grp) %>% 
                       filter(Depth==input$Depth)
   print(paste("---3.1---", nrow(foo)))
@@ -387,18 +407,8 @@ tif <- reactive({ #   get a tile filename
 #     Draw Block Group polys
 #######################
 
-# observe({ # clear old polys
-#   print("--clear old polys--")
-#   input$State # trigger
-#   
-#   leafletProxy("map") %>% 
-#     clearShapes() %>%
-#     clearControls()  
-# })
-
 observe({
   print("--6--")
-  # foo <- dataset_grp()[1,] # trigger a redraw
   #   Reset color scale
   if (nrow(Grp_data())==0) {return()}
   
@@ -409,6 +419,7 @@ observe({
                         max(Grp_data()[["Pct_poverty"]], na.rm=TRUE)),
                       na.color = "transparent")
     Draw_blkgrp(dataset_grp(), Grp_data(), pal)
+    Draw_dots(dataset_grp())
 })
 
 
@@ -418,7 +429,6 @@ observe({
 observe({
   print("--7--")
   foo <- dataset_grp()[1,] # trigger a redraw
-  # foo <- dataset_blk()[1,] # trigger a redraw
   print(paste("Block_var:", input$Block_var))
   if (nrow(Grp_data())==0) {
     print("No grp data")
@@ -465,33 +475,22 @@ observe({
     return()
   }
   
-  if (is.na(tif())) { #  nothing foun d
+  if (is.na(tif())) { #  nothing found
     print("NA tif()")
     keep_tif <<- "Next"
     return()
   }
   
-  if (keep_tif == "None") {#  first pass with new state but no grp picked
+  if (keep_tif == "None" & !str_detect(tif(), "slr_depth")) {#  first pass with new state but no grp picked
     print("No water")
     keep_tif <<- "Next"
     return()
   }
   
-  if (keep_tif != tif()) {
+  if (keep_tif != tif()) { # draw water
     keep_tif <<- tif()
     Draw_water(paste0(Tiff_path, tif()), input)
   }
-
-  # if (keep_tif != "None" &
-  #     keep_tif != paste0(Tiff_path, tif())) { # has it changed?
-  #   keep_tif <<- paste0(Tiff_path, tif()) ###  note global define
-  #   # old_state <- input$State
-  #   Draw_water(keep_tif) # draw water
-  # } else {
-  #   print("No water")
-  #     keep_tif <<- "Next" 
-  #   }
-
 })
 
 #####################
@@ -515,36 +514,23 @@ observeEvent(input$Google, {
 observeEvent(Row_list$rows, ignoreNULL = FALSE, {
   print(paste("--9--", Row_list$rows))
       Row_dropped <- NULL
-    # if (Sel()) { # at least one row is selected
-  # print("--9.1--")
     Row_added <-   setdiff(Row_list$rows, Row_list$oldrows) # find new row
     Row_dropped <- setdiff(Row_list$oldrows, Row_list$rows) # find deleted row
-  # print(paste("--9.1.1   add--", Row_added))
-  # print(paste("--9.1.11 drop--", Row_dropped))
-  # print(paste("--9.1.12--", Row_list$oldrows))
     rows <- Row_list$rows
     Row_list$oldrows <- rows
-  # print("--9.1.2--")
     if (Sel()) { # at least one row is selected
-  # print(paste0("add high: ", dataset_grp()[Row_added,]$Blk_grp, "_highlight"))
       leafletProxy("map") %>%
         addPolylines(data=dataset_grp()[Row_added,],
                      color="red",
                      layerId=paste0(dataset_grp()[Row_added,]$Blk_grp, "_highlight"),
                      weight=4)
     }
-  # print("????")
   if (!is.null(Row_dropped) & length(Row_dropped)>0){ # a row was unselected
-  # print("--9.2--")
-  # print(paste0("drop high: ", dataset_grp()[Row_dropped,]$Blk_grp, "_highlight"))
       leafletProxy("map") %>%
         removeShape(layerId = paste0(dataset_grp()[Row_dropped,]$Blk_grp,
                                      "_highlight"))
   }
-  # print("!!!!")
   if(!Sel() &  !is.null(Row_dropped)){ # the final row was unselected
-  # print(paste("--9.3--", Row_list$oldrows))
-  # print(paste("--9.4--", dataset_grp()[Row_list$oldrows,]$Blk_grp, "_highlight"))
       leafletProxy("map") %>%
         removeShape(layerId = paste0(dataset_grp()[Row_list$oldrows,]$Blk_grp,
                                      "_highlight"))
@@ -576,7 +562,6 @@ Sel <- reactive({!is.null(input$data_rows_selected)}) # is there a selection?
 Row_list <-reactiveValues(rows=list()) # what rows are selected?
 
 observeEvent(input$data_rows_selected, ignoreNULL = FALSE, {
-  # req(input$data_rows_selected)
     Row_list$rows <- input$data_rows_selected
 }) #END OBSERVE EVENT
 
