@@ -1,0 +1,153 @@
+---
+title: "Update Blk Grp files with FEMA data"
+author: "Alan Jackson"
+format: html
+editor: source
+---
+
+##        Read a Parquet file downloaded from FEMA
+
+https://www.fema.gov/openfema-data-page/fima-nfip-redacted-claims-v2
+
+
+
+
+```{r setup}
+
+library(tidyverse)
+library(gt)
+library(tidycensus)
+
+pq_path <- "/home/ajackson/Dropbox/Rprojects/ERD/Data/"
+Curated_path <- "/home/ajackson/Dropbox/Rprojects/ERD/SeaLevel/Newer/"
+
+#   Expand box by 20% to give a little extra room
+expand_box <- function(bbox, pct=0.2){
+  Dx <- (bbox[["xmax"]]-bbox[["xmin"]])*pct
+  Dy <- (bbox[["ymax"]]-bbox[["ymin"]])*pct
+  bbox["xmin"] <- bbox["xmin"] - Dx
+  bbox["xmax"] <- bbox["xmax"] + Dx
+  bbox["ymin"] <- bbox["ymin"] - Dy
+  bbox["ymax"] <- bbox["ymax"] + Dy
+  return(bbox)
+}
+```
+
+##        Set up connection to file and pull out Harris county
+
+```{r}
+FEMA <- arrow::open_dataset(paste0(pq_path,"FimaNfipClaims.parquet"))
+
+FEMA_all <- FEMA %>% collect()
+
+saveRDS(FEMA_all, paste0(pq_path, "FEMA_Flood.rds"))
+
+```
+
+##        Create an event code
+
+```{r}
+
+Fema_clean <- FEMA_all %>% 
+  select(dateOfLoss, state, ratedFloodZone, occupancyType, amountPaidOnBuildingClaim,
+         yearOfLoss, buildingDamageAmount, buildingPropertyValue,
+         buildingReplacementCost, causeOfDamage, floodEvent, waterDepth,
+         floodZoneCurrent, censusTract, censusBlockGroupFips,
+         nfipCommunityName, eventDesignationNumber) %>% 
+  arrange(dateOfLoss)  %>% 
+  filter(occupancyType %in% c(1,2,3,11,12,13,14,15))
+  
+# causeOfDamage:
+# 0 : Other causes; 
+# 1 : Tidal water overflow; 
+# : Stream, river, or lake overflow; 
+# 3 : Alluvial fan overflow; 
+# 4 : Accumulation of rainfall or snowmelt; 
+# 7 : Erosion-demolition; 
+# 8 : Erosion-removal; 
+# 9 : Earth movement, landslide, land subsidence, sinkholes, etc.
+
+
+###   occupancy types
+# 1=single family residence; 
+# 2 = 2 to 4 unit residential building; 
+# 3 = residential building with more than 4 units; 
+# 4 = Non-residential building; 
+# 6 = Non Residential - Business; 
+# 11 = Single-family residential building with the exception of a mobile home or a single residential unit within a multi unit building; 
+# 12 = A residential non-condo building with 2, 3, or 4 units seeking insurance on all units; 
+# 13 = A residential non-condo building with 5 or more units seeking insurance on all units; 
+# 14 = Residential mobile/manufactured home; 
+# 15 = Residential condo association seeking coverage on a building with one or more units; 
+# 16 = Single residential unit within a multi-unit building; 
+# 17 = Non-residential mobile/manufactured home; 
+# 18 = A non-residential building; 
+# 19 = a non-residential unit within a multi-unit building;
+
+```
+
+##    Read in BlkGrp files and add FEMA stats to them
+
+```{r}
+
+State_abbr <-  c("AL", "FL", "GA", "LA", "MA", "MD", "ME", "MS", "NC", "NH", 
+                 "NJ", "NY", "PA", "RI", "SC", "TX", "VA")
+
+State <- "AL"
+
+  #   Prep data to be added
+
+  To_add <- Fema_clean %>% 
+    filter(state==State) %>% 
+    filter(!is.na(censusBlockGroupFips)) %>% 
+    select(dateOfLoss, ratedFloodZone, occupancyType, amountPaidOnBuildingClaim,
+         yearOfLoss,  causeOfDamage, floodEvent, waterDepth, censusBlockGroupFips,
+         nfipCommunityName) %>% 
+    mutate(Occupancy=case_when(
+              occupancyType==1 | occupancyType==11 | occupancyType==15 ~ "Own",
+              occupancyType==14 ~ "Mobile",
+              .default="Rent"
+    )) %>% 
+    group_by(censusBlockGroupFips, Occupancy) %>% 
+      summarise(Num_Claims=n(),
+                Num_dates=n_distinct(dateOfLoss)) %>% 
+    ungroup() %>% 
+    pivot_wider(names_from = Occupancy, values_from = c(Num_Claims, Num_dates),
+                values_fill=0) %>% 
+    mutate(Num_Claims=Num_Claims_Own+Num_Claims_Rent,
+           Num_dates=Num_dates_Own+Num_dates_Rent) %>% 
+     select(-Num_Claims_Mobile, -Num_dates_Mobile)
+  
+  Storms <- Fema_clean %>% 
+    filter(state==State) %>% 
+    filter(!is.na(censusBlockGroupFips)) %>% 
+    mutate(floodEvent=stringr::str_remove(floodEvent, "Hurricane ")) %>% 
+    mutate(floodEvent=stringr::str_replace(floodEvent, "Tropical Storm", "T.S.")) %>% 
+    replace_na(list(floodEvent="Unk")) %>% 
+    group_by(censusBlockGroupFips) %>% 
+      summarize(floodEvent=paste(unique(floodEvent), collapse=", ")) %>% 
+    ungroup()  
+    
+     Raster=paste(unique(Raster), collapse=",")
+    pivot_wider(names_from = Occupancy, values_from = c(Num_Claims, Num_dates),
+                values_fill=0) %>% 
+    
+      
+
+  #   Get original data
+  
+  Original <- readRDS(paste0(Curated_path, "Block_group_data_", State, ".rds"))  
+  
+  Added <- inner_join(Original, To_add, by=join_by("Blk_grp"=="censusBlockGroupFips")) %>%
+  mutate(Claims_perhouse=signif(Num_Claims/Households, 2)) %>% 
+  sf::st_as_sf() %>% 
+  sf::st_make_valid()
+
+```
+
+
+
+
+
+
+
