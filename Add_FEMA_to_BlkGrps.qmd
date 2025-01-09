@@ -92,9 +92,12 @@ Fema_clean <- FEMA_all %>%
 
 State_abbr <-  c("AL", "FL", "GA", "LA", "MA", "MD", "ME", "MS", "NC", "NH", 
                  "NJ", "NY", "PA", "RI", "SC", "TX", "VA")
+State_abbr <-  c("NY", "PA", "RI", "SC", "TX", "VA")
 
-State <- "AL"
+# State <- "AL"
 
+for (State in State_abbr) {
+  print(paste("--->", State))
   #   Prep data to be added
 
   To_add <- Fema_clean %>% 
@@ -116,7 +119,7 @@ State <- "AL"
                 values_fill=0) %>% 
     mutate(Num_Claims=Num_Claims_Own+Num_Claims_Rent,
            Num_dates=Num_dates_Own+Num_dates_Rent) %>% 
-     select(-Num_Claims_Mobile, -Num_dates_Mobile)
+     select(-any_of(c("Num_Claims_Mobile", "Num_dates_Mobile")))
   
   Storms <- Fema_clean %>% 
     filter(state==State) %>% 
@@ -128,20 +131,18 @@ State <- "AL"
       summarize(floodEvent=paste(unique(floodEvent), collapse=", ")) %>% 
     ungroup()  
     
-     Raster=paste(unique(Raster), collapse=",")
-    pivot_wider(names_from = Occupancy, values_from = c(Num_Claims, Num_dates),
-                values_fill=0) %>% 
-    
-      
-
   #   Get original data
   
   Original <- readRDS(paste0(Curated_path, "Block_group_data_", State, ".rds"))  
   
   Added <- inner_join(Original, To_add, by=join_by("Blk_grp"=="censusBlockGroupFips")) %>%
   mutate(Claims_perhouse=signif(Num_Claims/Households, 2)) %>% 
+  inner_join(., Storms, by=join_by("Blk_grp"=="censusBlockGroupFips")) %>% 
   sf::st_as_sf() %>% 
   sf::st_make_valid()
+  
+  saveRDS(Added, paste0(Curated_path, "Block_group_data_", State, ".rds"))
+}
 
 ```
 
