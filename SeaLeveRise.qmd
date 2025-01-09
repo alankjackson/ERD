@@ -71,7 +71,7 @@ Intersect_blocks <- function(df_tif, Blocks_trim) {
   val_by_block2 <- exactextractr::exact_extract(
                        x=df_tif,
                        y=Blocks_trim,
-                       max_cells_in_memory=8e+07,
+                       max_cells_in_memory=16e+07,
                        include_cols=c("GEOID")) %>% 
                    dplyr::bind_rows() %>%
                    tibble::as_tibble()
@@ -106,7 +106,7 @@ Census polygons are NAD83, EPSG:4269
 
 ```{r}
 ## AL, CT, DC, DE, FL, GA, LA, MA, MD, ME, MS, NC, NH, NJ, NY, PA, RI, SC, TX, VA
-State <- "TX"
+State <- "NC"
 
 #     P16_002N  !!Total:!!Family households:
 #     P16_007N !!Total:!!Nonfamily households:
