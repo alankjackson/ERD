@@ -37,6 +37,10 @@ expand_box <- function(bbox, pct=0.2){
 ```{r}
 FEMA <- arrow::open_dataset(paste0(pq_path,"FimaNfipClaims.parquet"))
 
+FEMA_all <- FEMA %>% collect()
+
+saveRDS(FEMA_all, paste0(pq_path, "FEMA_Flood.rds"))
+
 FEMA_Harris <- FEMA %>% 
   filter(countyCode=="48201") %>% 
   collect()
