@@ -19,6 +19,7 @@ library(gt)
 library(tidycensus)
 
 pq_path <- "/home/ajackson/Dropbox/Rprojects/ERD/Data/"
+Old_path <- "/home/ajackson/Dropbox/Rprojects/ERD/SeaLevel/keepNewer/"
 Curated_path <- "/home/ajackson/Dropbox/Rprojects/ERD/SeaLevel/Newer/"
 
 #   Expand box by 20% to give a little extra room
@@ -92,7 +93,7 @@ Fema_clean <- FEMA_all %>%
 
 State_abbr <-  c("AL", "FL", "GA", "LA", "MA", "MD", "ME", "MS", "NC", "NH", 
                  "NJ", "NY", "PA", "RI", "SC", "TX", "VA")
-State_abbr <-  c("NY", "PA", "RI", "SC", "TX", "VA")
+# State_abbr <-  c("NY", "PA", "RI", "SC", "TX", "VA")
 
 # State <- "AL"
 
@@ -111,9 +112,11 @@ for (State in State_abbr) {
               occupancyType==14 ~ "Mobile",
               .default="Rent"
     )) %>% 
+    mutate(week_yr=paste(lubridate::year(dateOfLoss), 
+                         lubridate::week(dateOfLoss))) %>% 
     group_by(censusBlockGroupFips, Occupancy) %>% 
       summarise(Num_Claims=n(),
-                Num_dates=n_distinct(dateOfLoss)) %>% 
+                Num_dates=n_distinct(week_yr)) %>% 
     ungroup() %>% 
     pivot_wider(names_from = Occupancy, values_from = c(Num_Claims, Num_dates),
                 values_fill=0) %>% 
@@ -133,7 +136,7 @@ for (State in State_abbr) {
     
   #   Get original data
   
-  Original <- readRDS(paste0(Curated_path, "Block_group_data_", State, ".rds"))  
+  Original <- readRDS(paste0(Old_path, "Block_group_data_", State, ".rds"))  
   
   Added <- inner_join(Original, To_add, by=join_by("Blk_grp"=="censusBlockGroupFips")) %>%
   mutate(Claims_perhouse=signif(Num_Claims/Households, 2)) %>% 
