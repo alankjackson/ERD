@@ -162,6 +162,7 @@ state="AL"
 
 for (state in States) {
   
+  if (State=="VI") {next}
   print(paste("---->", state))
   #   First get block groups for 2020 census  
   Census2020 <- get_ACS(state, 2020)
