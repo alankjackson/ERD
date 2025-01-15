@@ -27,8 +27,9 @@ FEMA <- readRDS(paste0(pq_path, "FEMA_Flood.rds"))
 
 ```{r}
 
+options(tigris_use_cache = TRUE)
 
-get_ACS <- function(State, Counties) {
+get_ACS <- function(State, Year) {
   # Now let's prepare the block-group data
   
   acs_vars <- c(Pop="B01001_001", # ACS population estimate
@@ -41,22 +42,20 @@ get_ACS <- function(State, Counties) {
                 Med_age="B01002_001") # median age, blk grp
   ACS <- get_acs(geography="block group",
                  variables=acs_vars,
-                 year=2020,
+                 year=Year,
                  state=State,
-                 county=Counties,
                  output="wide",
                  geometry=TRUE)
   
   ACS <- ACS %>% 
-    mutate(Pct_poverty=100*Fam_in_povertyE/FamE) %>% 
+    mutate(Pct_poverty=as.integer(signif(100*Fam_in_povertyE/FamE, 0))) %>% 
     select(GEOID, Pop_acs=PopE, Med_inc=Med_incE, Per_cap_in=Per_cap_incE,
            Fam=FamE, Fam_in_poverty=Fam_in_povertyE, Aggreg_inc=Aggreg_incE,
            Pct_poverty, Households=HouseholdsE, Med_ageE=Med_ageE)
   
-  ACS <- st_transform(ACS, googlecrs)  
+  ACS <- sf::st_transform(ACS, googlecrs)  
   
   return(ACS)
-
 }
 
 ```
@@ -80,6 +79,7 @@ FEMA2 <- FEMA2 %>%
   select(dateOfLoss, ratedFloodZone, occupancyType, amountPaidOnBuildingClaim,
        yearOfLoss,  causeOfDamage, floodEvent, waterDepth, censusBlockGroupFips,
        nfipCommunityName, state, countyCode) %>% 
+  mutate(Month=lubridate::month(dateOfLoss, label=TRUE)) %>% 
   mutate(Occupancy=case_when(
             occupancyType==1 | occupancyType==11 | occupancyType==15 ~ "Own",
             occupancyType==14 ~ "Mobile",
@@ -94,6 +94,8 @@ FEMA3 <- FEMA2 %>%
   group_by(censusBlockGroupFips, Occupancy) %>% 
     summarise(Num_Claims=n(),
               Num_dates=n_distinct(week_yr),
+              # Year=first(yearOfLoss),
+              # Month=first(Month),
               State=first(state),
               County=first(countyCode)) %>% 
   ungroup() %>% 
@@ -103,7 +105,6 @@ FEMA3 <- FEMA2 %>%
                   Num_dates_Mobile=0)) %>%  
   mutate(Num_Claims=Num_Claims_Own+Num_Claims_Rent+Num_Claims_Mobile,
          Num_dates=Num_dates_Own+Num_dates_Rent+Num_dates_Mobile) 
-   # select(-any_of(c("Num_Claims_Mobile", "Num_dates_Mobile")))  
 
 #   Pull out storm names to later add back to file
 
@@ -112,10 +113,16 @@ Storms <- FEMA2 %>%
   mutate(floodEvent=stringr::str_remove(floodEvent, "Hurricane ")) %>% 
   mutate(floodEvent=stringr::str_replace(floodEvent, "Tropical Storm", "T.S.")) %>% 
   replace_na(list(floodEvent="Unk")) %>% 
+  mutate(floodEvent=paste(floodEvent, yearOfLoss, Month)) %>% 
   group_by(censusBlockGroupFips) %>% 
     summarize(floodEvent=paste(unique(floodEvent), collapse=", ")) %>% 
   ungroup()  
-  
+
+FEMA3 <-  FEMA3 %>% 
+  inner_join(., Storms, by="censusBlockGroupFips")  %>% 
+  filter(!State=="UN") %>% 
+  filter(Num_Claims>9) # 10 or more claims total
+
 # causeOfDamage:
 # 0 : Other causes; 
 # 1 : Tidal water overflow; 
@@ -149,9 +156,59 @@ Storms <- FEMA2 %>%
 
 ```{r}
 
-States <- unique(FEMA2$state)
+States <- unique(FEMA3$State)
+
+state="AL"
+
+for (state in States) {
+  
+  print(paste("---->", state))
+  #   First get block groups for 2020 census  
+  Census2020 <- get_ACS(state, 2020)
+  Census2015 <- get_ACS(state, 2019)
+  # Census2013 <- get_ACS(state, 2013) # 2009-2013
+  
+  foo <- FEMA3 %>% 
+    filter(State==state) %>% 
+    left_join(., Census2020, by=join_by("censusBlockGroupFips"=="GEOID")) %>%  
+    sf::st_as_sf() 
+  
+  Remainder <- foo %>% 
+    sf::st_drop_geometry() %>% 
+    filter(is.na(Pop_acs)) %>% 
+    select(-Pop_acs, -Med_inc, -Per_cap_in, -Fam, -Fam_in_poverty, -Aggreg_inc,
+           -Pct_poverty, -Households, -Med_ageE)  
+  
+  #   Now take the ones that didn't match and look for 2010 census
+  
+  foo2 <- left_join(Remainder, Census2015, 
+                    by=join_by("censusBlockGroupFips"=="GEOID")) %>%  
+          sf::st_as_sf() 
+  
+  Remainder <- foo2 %>% 
+    filter(is.na(Pop_acs)) %>% 
+    select(-Pop_acs, -Med_inc, -Per_cap_in, -Fam, -Fam_in_poverty, -Aggreg_inc,
+           -Pct_poverty, -Households, -Med_ageE) %>% 
+    sf::st_drop_geometry()
+  
+  # foo3 <- left_join(Remainder, Census2013, 
+  #                   by=join_by("censusBlockGroupFips"=="GEOID"))  
+  
+  Good_data <- foo %>% 
+    filter(!is.na(Pop_acs)) %>% 
+    bind_rows(., foo2 %>% filter(!is.na(Pop_acs))) %>% 
+    filter(Pop_acs>50) %>% 
+    mutate(ClaimsPerHousehold=signif(Num_Claims/Households, 2)) %>% 
+    sf::st_as_sf() %>% 
+    sf::st_make_valid()
+  
+  saveRDS(Remainder, paste0(path, "FEMA_extra_remainder_", state, ".rds"))
+  saveRDS(Good_data, paste0(path, "FEMA_extra_", state, ".rds"))
+  
+}
 
 
+  
 ```
 
 
