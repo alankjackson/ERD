@@ -12,6 +12,27 @@ library(stringr)
 library(leaflet)
 library(shiny)
 
+path <- "/home/ajackson/Dropbox/Rprojects/ERD/FEMA/"
+DataLocation <- "https://www.ajackson.org/ERD/FEMA/"
+
+# Google_notes <- "https://docs.google.com/document???????????????????"
+
+#########    for testing locally
+Local_test <- TRUE
+
+
+if ( Local_test ) {
+  df_grp <- readRDS(paste0(path, "Block_group_data_AL.rds")) 
+} else {
+  z <- url(paste0(DataLocation, "Block_group_data_AL.rds"), method="libcurl")
+  df_grp <- readRDS(z)
+  close(z)
+}
+
+#######################################################
+# Functions
+#######################################################
+
 # define js function for opening urls in new tab/window
 js_code <- "
 shinyjs.browseURL = function(url) {
