@@ -1,0 +1,82 @@
+---
+title: "Prep LA fire data"
+author: "Alan Jackson"
+format: html
+editor: source
+---
+
+
+## Read and prep LA fire data
+
+https://hub-calfire-forestry.hub.arcgis.com/search
+
+retrieved 15 Jan 2025
+
+
+```{r setup}
+
+library(tidyverse)
+library(gt)
+library(tidycensus)
+library(sf)
+
+googlecrs <- "EPSG:4326"
+
+in_path <- "/home/ajackson/Dropbox/Rprojects/ERD/CA_Fire/Data/"
+path <- "/home/ajackson/Dropbox/Rprojects/ERD/CA_Fire/"
+
+#   Read in the shapefiles we created to a simple feature
+Eaton <- read_sf(paste0(in_path, "DINS_2025_Eaton_Public_View/",
+                        "DINS_2025_Eaton_Public_View.shp"))
+
+summary(Eaton) # check to see what it looks like. Could also do plot(temp)
+
+Eaton <- Eaton %>% 
+  st_transform(googlecrs)
+
+Palisades <- read_sf(paste0(in_path, "DINS_2025_Palisades_Public_View/",
+                            "DINS_2025_Palisades_Public_View.shp"))
+
+summary(Palisades) # check to see what it looks like. Could also do plot(temp)
+
+Palisades <- Palisades %>% 
+  st_transform(googlecrs)
+
+```
+
+##    Functions
+
+```{r}
+
+options(tigris_use_cache = TRUE)
+
+get_ACS <- function(State, County) {
+  # Now let's prepare the block-group data
+  
+  acs_vars <- c(Pop="B01001_001", # ACS population estimate
+                Med_inc="B19013_001", # median household income, blk grp
+                Per_cap_inc="B19301_001", # Per capita income, blk grp
+                Fam="B17010_001", # Families, blk grp
+                Fam_in_poverty="B17010_002", # Families in poverty, blk grp
+                Aggreg_inc="B19025_001", # Aggregate household income, blk grp
+                Households="B11012_001", # Households, blk grp
+                Med_age="B01002_001") # median age, blk grp
+  ACS <- get_acs(geography="block group",
+                 variables=acs_vars,
+                 county=County,
+                 state=State,
+                 output="wide",
+                 geometry=TRUE)
+  
+  ACS <- ACS %>% 
+    mutate(Pct_poverty=as.integer(signif(100*Fam_in_povertyE/FamE, 0))) %>% 
+    select(GEOID, Pop_acs=PopE, Med_inc=Med_incE, Per_cap_in=Per_cap_incE,
+           Fam=FamE, Fam_in_poverty=Fam_in_povertyE, Aggreg_inc=Aggreg_incE,
+           Pct_poverty, Households=HouseholdsE, Med_ageE=Med_ageE)
+  
+  ACS <- sf::st_transform(ACS, googlecrs)  
+  
+  return(ACS)
+}
+
+```
