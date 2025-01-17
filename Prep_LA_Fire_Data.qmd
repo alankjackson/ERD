@@ -14,7 +14,6 @@ retrieved 15 Jan 2025
 
 
 ```{r setup}
-
 library(tidyverse)
 library(gt)
 library(tidycensus)
@@ -32,7 +31,8 @@ Eaton <- read_sf(paste0(in_path, "DINS_2025_Eaton_Public_View/",
 summary(Eaton) # check to see what it looks like. Could also do plot(temp)
 
 Eaton <- Eaton %>% 
-  st_transform(googlecrs)
+  mutate(Fire="Eaton") %>% 
+  st_transform(googlecrs) # get to a better geoid compatible with Open maps
 
 Palisades <- read_sf(paste0(in_path, "DINS_2025_Palisades_Public_View/",
                             "DINS_2025_Palisades_Public_View.shp"))
@@ -40,7 +40,16 @@ Palisades <- read_sf(paste0(in_path, "DINS_2025_Palisades_Public_View/",
 summary(Palisades) # check to see what it looks like. Could also do plot(temp)
 
 Palisades <- Palisades %>% 
+  mutate(Fire="Palisades") %>% 
   st_transform(googlecrs)
+
+#   Read in fire perimeters
+
+Perimeters <- read_sf(paste0(in_path, "CA_Perimeters_NIFC_FIRIS_public_view/",
+                             "CA_Perimeters_NIFC_FIRIS_public_view.shp")) %>% 
+  filter(stringr::str_detect(incident_n, "Eaton|PALISADES"))
+
+summary(Perimeters)
 
 ```
 
@@ -63,6 +72,7 @@ get_ACS <- function(State, County) {
                 Med_age="B01002_001") # median age, blk grp
   ACS <- get_acs(geography="block group",
                  variables=acs_vars,
+                 year="2020",
                  county=County,
                  state=State,
                  output="wide",
@@ -74,9 +84,67 @@ get_ACS <- function(State, County) {
            Fam=FamE, Fam_in_poverty=Fam_in_povertyE, Aggreg_inc=Aggreg_incE,
            Pct_poverty, Households=HouseholdsE, Med_ageE=Med_ageE)
   
-  ACS <- sf::st_transform(ACS, googlecrs)  
+  ACS <- sf::st_transform(ACS, googlecrs)  # get to a common geoid
   
   return(ACS)
 }
 
 ```
+
+###   Clean up fire data
+
+```{r}
+
+df <- bind_rows(Eaton, Palisades)
+
+#   Make factors
+
+df <- df %>% 
+  mutate(Building=case_when(
+    stringr::str_detect(STRUCTURET, "Residen") ~ "Residence",
+    stringr::str_detect(STRUCTURET, "Mobile") ~ "Mobile Home",
+    stringr::str_detect(STRUCTURET, "Home") ~ "Mobile Home",
+    stringr::str_detect(STRUCTURET, "School") ~ "School",
+    stringr::str_detect(STRUCTURET, "Church") ~ "Church",
+    stringr::str_detect(STRUCTURET, "Commer") ~ "Commercial",
+    .default = "Other"
+  ))  %>% 
+  mutate(Damage=factor(DAMAGE, levels=c("No Damage", "Affected (1-9%)", "Minor (10-25%)", "Major (26-50%)", "Destroyed (>50%)"))) %>% 
+  select(Damage, Structure=STRUCTURET, Fire, Building)
+
+df %>% filter(!Damage=="No Damage") %>% 
+  ggplot(aes(x=Building)) +
+  geom_bar() +
+  facet_wrap(~Fire) +
+  coord_flip() +
+  labs(title="LA Fires, Current Count of Damaged Structures",
+       subtitle="As of Jan 15, 2025 (Other is mostly Utilities)",
+       caption="Alan Jackson, 2025")
+
+  tmap::tmap_options(basemaps="OpenStreetMap")
+  # tmap::tmap_options(basemap.server = c("OpenStreetMap")) # tmap 4.0
+  tmap::tmap_mode("view")
+
+My_palette <- c("green", "lightblue", "yellow", "salmon", "red")
+  
+df %>%  
+  sf::st_as_sf() %>% 
+  tmap::tm_shape() +
+  tmap::tm_dots("Damage", 
+                alpha=0.5,
+                palette=My_palette,
+                popup.vars=c("Damage",
+                             "Structure")) + 
+  tmap::tm_shape(Perimeters) +
+  tmap::tm_polygons(border.col="red", alpha=0)
+```
+
+
+
+
+
+
+
+
+
+
