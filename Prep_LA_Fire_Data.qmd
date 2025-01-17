@@ -47,7 +47,8 @@ Palisades <- Palisades %>%
 
 Perimeters <- read_sf(paste0(in_path, "CA_Perimeters_NIFC_FIRIS_public_view/",
                              "CA_Perimeters_NIFC_FIRIS_public_view.shp")) %>% 
-  filter(stringr::str_detect(incident_n, "Eaton|PALISADES"))
+  filter(stringr::str_detect(incident_n, "Eaton|PALISADES")) %>% 
+  st_transform(googlecrs)
 
 summary(Perimeters)
 
@@ -72,7 +73,7 @@ get_ACS <- function(State, County) {
                 Med_age="B01002_001") # median age, blk grp
   ACS <- get_acs(geography="block group",
                  variables=acs_vars,
-                 year="2020",
+                 year=2020,
                  county=County,
                  state=State,
                  output="wide",
@@ -84,7 +85,8 @@ get_ACS <- function(State, County) {
            Fam=FamE, Fam_in_poverty=Fam_in_povertyE, Aggreg_inc=Aggreg_incE,
            Pct_poverty, Households=HouseholdsE, Med_ageE=Med_ageE)
   
-  ACS <- sf::st_transform(ACS, googlecrs)  # get to a common geoid
+  ACS <- sf::st_transform(ACS, googlecrs) %>%  # get to a common geoid
+    sf::st_make_valid()
   
   return(ACS)
 }
@@ -94,7 +96,6 @@ get_ACS <- function(State, County) {
 ###   Clean up fire data
 
 ```{r}
-
 df <- bind_rows(Eaton, Palisades)
 
 #   Make factors
@@ -121,7 +122,18 @@ df %>% filter(!Damage=="No Damage") %>%
        subtitle="As of Jan 15, 2025 (Other is mostly Utilities)",
        caption="Alan Jackson, 2025")
 
-  tmap::tmap_options(basemaps="OpenStreetMap")
+Census <- get_ACS('CA', "Los Angeles")
+
+Census <- Census[Perimeters,]
+
+
+```
+
+#   Plot
+
+```{r}
+
+tmap::tmap_options(basemaps="OpenStreetMap")
   # tmap::tmap_options(basemap.server = c("OpenStreetMap")) # tmap 4.0
   tmap::tmap_mode("view")
 
@@ -136,10 +148,24 @@ df %>%
                 popup.vars=c("Damage",
                              "Structure")) + 
   tmap::tm_shape(Perimeters) +
-  tmap::tm_polygons(border.col="red", alpha=0)
+  tmap::tm_polygons(border.col="red", alpha=0) +
+  tmap::tm_shape(Census) +
+  tmap::tm_polygons(border.col="black", alpha=0.4, palette="-RdYlGn", col="Pct_poverty")
 ```
 
+##    Save the files
 
+```{r}
+
+saveRDS(df, paste0(path, "Damages.rds"))
+
+saveRDS(Perimeters, paste0(path, "Perimeters.rds"))
+
+saveRDS(Census, paste0(path, "Census.rds"))
+
+
+
+```
 
 
 
