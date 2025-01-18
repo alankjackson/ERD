@@ -93,16 +93,12 @@ leafletOutput('map')
 #| context: server
 
 dataset <- reactive({
-  print(input$Structure_display)
-  print(is.null(input$Structure_display))
   if (is.null(input$Structure_display)) {
    tribble(~nothing, ~morenothing) 
   } else {
-  print("==1==")
   foo <<- Damages %>% 
     filter(Damage %in% input$Damage_display) %>% 
-    filter(str_detect(Building, paste(input$Structure_display, collapse="|")))# %>%
-    # sf::st_as_sf()
+    filter(str_detect(Building, paste(input$Structure_display, collapse="|")))
   foo
     }
 })
@@ -160,12 +156,11 @@ observe({
 })
 
 observe({ # draw the damage points
-  #   Reset color scale
-  # if (nrow(dataset())==0) {return()} # nothing to show
-  if (nrow(dataset())==0) {
+  if (nrow(dataset())==0) { # move along, nothing to see here
     leafletProxy("map", data=dataset()) %>% 
     clearMarkers()
   } else {
+  #   Reset color scale
     pal <- colorFactor(
       My_palette,
       levels=levels(Damages$Damage),
@@ -179,7 +174,6 @@ observe({ # draw the damage points
         opacity=0,
         fillOpacity=1,
         fillColor=~pal(Damage),
-        # color=~pal(Damage),
         popup = paste(
           "Damage:", dataset()$Damage, "<br>",
           "Structure:", dataset()$Structure, "<br>"
