@@ -34,6 +34,14 @@ Eaton <- Eaton %>%
   mutate(Fire="Eaton") %>% 
   st_transform(googlecrs) # get to a better geoid compatible with Open maps
 
+#   Create a tiny date file with the date for that file
+
+Mydate <- file.info(paste0(in_path, "DINS_2025_Eaton_Public_View/",
+                  "DINS_2025_Eaton_Public_View.shp")) %>% select(ctime)
+Mydate <- as.character(lubridate::as_date(Mydate$ctime))
+saveRDS(Mydate, paste0(path, "Date_string.rds"))
+
+
 Palisades <- read_sf(paste0(in_path, "DINS_2025_Palisades_Public_View/",
                             "DINS_2025_Palisades_Public_View.shp"))
 
@@ -122,7 +130,18 @@ df %>% filter(!Damage=="No Damage") %>%
        subtitle="As of Jan 15, 2025 (Other is mostly Utilities)",
        caption="Alan Jackson, 2025")
 
-Census <- get_ACS('CA', "Los Angeles")
+df %>% 
+  ggplot(aes(x=Damage)) +
+  geom_bar() +
+  facet_wrap(~Fire) +
+  coord_flip() +
+  labs(title="LA Fires, Current Count of Damaged Structures",
+       subtitle="As of Jan 17, 2025 ",
+       caption="Alan Jackson, 2025")
+
+Census <- get_ACS('CA', "Los Angeles") %>% 
+  replace_na(list(Pct_poverty=0)) %>% 
+  filter(Pop_acs>0)
 
 Census <- Census[Perimeters,]
 
