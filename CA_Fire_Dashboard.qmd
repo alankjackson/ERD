@@ -18,11 +18,11 @@ googlecrs <- "EPSG:4326"
 
 path <- "/home/ajackson/Dropbox/Rprojects/ERD/CA_Fire/"
 
-Local_test <- TRUE
+Local_test <- FALSE
 
 #   Directory where data is stored
 
-DataLocation <- "https://www.ajackson.org/ERD/CA_Fire/"
+DataLocation <- "https://www.ajackson.org/ERD/CA_fire/"
 
 if ( Local_test ) {
   Damages <- readRDS(paste0(path, "Damages.rds"))
@@ -93,11 +93,18 @@ leafletOutput('map')
 #| context: server
 
 dataset <- reactive({
-  foo <- Damages %>% 
+  print(input$Structure_display)
+  print(is.null(input$Structure_display))
+  if (is.null(input$Structure_display)) {
+   tribble(~nothing, ~morenothing) 
+  } else {
+  print("==1==")
+  foo <<- Damages %>% 
     filter(Damage %in% input$Damage_display) %>% 
     filter(str_detect(Building, paste(input$Structure_display, collapse="|")))# %>%
     # sf::st_as_sf()
   foo
+    }
 })
 
 ##################################
@@ -154,26 +161,30 @@ observe({
 
 observe({ # draw the damage points
   #   Reset color scale
-  if (nrow(dataset())==0) {return()} # nothing to show
-  
-  pal <- colorFactor(
-    My_palette,
-    levels=levels(Damages$Damage),
-    ordered=TRUE
-  )
-    
+  # if (nrow(dataset())==0) {return()} # nothing to show
+  if (nrow(dataset())==0) {
     leafletProxy("map", data=dataset()) %>% 
-    clearMarkers() %>%
-    addCircleMarkers(
-      radius=2,
-      opacity=0,
-      fillOpacity=1,
-      fillColor=~pal(Damage),
-      # color=~pal(Damage),
-      popup = paste(
-        "Damage:", dataset()$Damage, "<br>",
-        "Structure:", dataset()$Structure, "<br>"
-    )) 
+    clearMarkers()
+  } else {
+    pal <- colorFactor(
+      My_palette,
+      levels=levels(Damages$Damage),
+      ordered=TRUE
+    )
+      
+      leafletProxy("map", data=dataset()) %>% 
+      clearMarkers() %>%
+      addCircleMarkers(
+        radius=2,
+        opacity=0,
+        fillOpacity=1,
+        fillColor=~pal(Damage),
+        # color=~pal(Damage),
+        popup = paste(
+          "Damage:", dataset()$Damage, "<br>",
+          "Structure:", dataset()$Structure, "<br>"
+      )) 
+  }
 })
   
 
