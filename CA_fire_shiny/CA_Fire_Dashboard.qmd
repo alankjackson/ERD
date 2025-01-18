@@ -28,6 +28,7 @@ if ( Local_test ) {
   Damages <- readRDS(paste0(path, "Damages.rds"))
   Perimeters <- readRDS(paste0(path, "Perimeters.rds"))
   Census <- readRDS(paste0(path, "Census.rds"))
+  Date_string <- readRDS(paste0(path, "Date_string.rds"))
 } else {
   z <- url(paste0(DataLocation, "Damages.rds"), method="libcurl")
   Damages <- readRDS(z)
@@ -37,6 +38,9 @@ if ( Local_test ) {
   close(z)
   z <- url(paste0(DataLocation, "Census.rds"), method="libcurl")
   Census <- readRDS(z)
+  close(z)
+  z <- url(paste0(DataLocation, "Date_string.rds"), method="libcurl")
+  Date_string <- readRDS(z)
   close(z)
 }
 
@@ -79,6 +83,8 @@ Poverty data from the 2020 ACS census data, displayed by block-group.
 
 Damage and structure data from the state of California Department of Forestry
 and Fire Protection website.
+
+Data is current as of **`r Date_string`**
 
 "Other" is almost entirely "Utility Misc Structure".
 
@@ -149,7 +155,6 @@ observe({
       position = "bottomright",
       pal=pal2,
       values=Damages$Damage,
-      # labels=levels(Damages$Damage),
       title="Damage"
     )  
   })
