@@ -1,0 +1,184 @@
+---
+title: "California LA Fires"
+author: "Alan Jackson"
+format: dashboard
+server: shiny
+editor: source
+---
+
+```{r}
+#| context: setup
+### #| include: false
+
+library(tidyverse)
+library(stringr)
+library(leaflet)
+
+googlecrs <- "EPSG:4326"
+
+path <- "/home/ajackson/Dropbox/Rprojects/ERD/CA_Fire/"
+
+Local_test <- TRUE
+
+#   Directory where data is stored
+
+DataLocation <- "https://www.ajackson.org/ERD/CA_Fire/"
+
+if ( Local_test ) {
+  Damages <- readRDS(paste0(path, "Damages.rds"))
+  Perimeters <- readRDS(paste0(path, "Perimeters.rds"))
+  Census <- readRDS(paste0(path, "Census.rds"))
+} else {
+  z <- url(paste0(DataLocation, "Damages.rds"), method="libcurl")
+  Damages <- readRDS(z)
+  close(z)
+  z <- url(paste0(DataLocation, "Perimeters.rds"), method="libcurl")
+  Perimeters <- readRDS(z)
+  close(z)
+  z <- url(paste0(DataLocation, "Census.rds"), method="libcurl")
+  Census <- readRDS(z)
+  close(z)
+}
+
+#   Create function for formatting to dollars
+FormatDollar <- scales::label_currency()
+
+#   Palette for destruction levels
+My_palette <- c("green", "lightblue", "yellow", "salmon", "red")
+
+```
+
+# {.sidebar}
+
+```{r}
+
+checkboxGroupInput("Damage_display",
+                   "Damages",
+                   selected=c("Major (26-50%)", "Destroyed (>50%)"),
+                   choices=c("No Damage"="No Damage", 
+                     "Affected (1-9%)"="Affected (1-9%)", 
+                     "Minor (10-25%)"="Minor (10-25%)",  
+                     "Major (26-50%)"="Major (26-50%)",  
+                     "Destroyed (>50%)"="Destroyed (>50%)"))
+
+br()
+
+checkboxGroupInput("Structure_display",
+                   "Structure",
+                   selected=c("Residence", "Mobile Home"),
+                   choices=c("Residence"="Residence",  
+                     "Mobile Home"="Mobile Home",  
+                     "School"="School", 
+                     "Church"="Church",
+                     "Commercial"="Commercial",  
+                     "Other"="Other"))
+
+```
+
+Poverty data from the 2020 ACS census data, displayed by block-group.
+
+Damage and structure data from the state of California Department of Forestry
+and Fire Protection website.
+
+"Other" is almost entirely "Utility Misc Structure".
+
+
+# Plot
+
+```{r}
+leafletOutput('map')
+```
+
+```{r}
+#| context: server
+
+dataset <- reactive({
+  foo <- Damages %>% 
+    filter(Damage %in% input$Damage_display) %>% 
+    filter(str_detect(Building, paste(input$Structure_display, collapse="|")))# %>%
+    # sf::st_as_sf()
+  foo
+})
+
+##################################
+#       Build map
+################################## 
+
+#     Build base map
+observe({
+  Bbox <- sf::st_bbox(Census)
+  pal <- colorNumeric("YlOrBr",
+                    c(0, 30), na.color = "transparent") 
+  pal2 <- colorFactor(
+    My_palette,
+    levels=levels(Damages$Damage),
+    ordered=TRUE
+  )
+      #   Build empty master map 
+  output$map <- leaflet::renderLeaflet({
+    leaflet() %>% addTiles() %>%
+    fitBounds(Bbox[["xmin"]], Bbox[["ymin"]],
+              Bbox[["xmax"]], Bbox[["ymax"]]) %>% 
+      #   Perimeter
+      addPolylines(data=Perimeters,
+                  color="red",
+                  weight=2) %>% 
+      #   Block groups
+      addPolygons(data=Census,
+                  weight=1,
+                  color="black",
+                  fillOpacity=0.5,
+                  fillColor = ~pal(Pct_poverty),
+                  popup = paste(
+                    "Block Group:", Census$Blk_grp, "<br>",
+                    "Population:", Census$Pop_acs, "<br>",
+                    "Households:", Census$Households, "<br>",
+                    "Per Cap Income:", FormatDollar(Census$Per_cap_in), "<br>",
+                    "% in poverty:", Census$Pct_poverty)
+        ) %>%   
+      addLegend(data=Census,
+        position = "topright",
+        pal=pal,
+        values = ~Pct_poverty,
+        title="% Poverty"
+      ) %>%   
+    addLegend(
+      position = "bottomright",
+      pal=pal2,
+      values=Damages$Damage,
+      # labels=levels(Damages$Damage),
+      title="Damage"
+    )  
+  })
+})
+
+observe({ # draw the damage points
+  #   Reset color scale
+  if (nrow(dataset())==0) {return()} # nothing to show
+  
+  pal <- colorFactor(
+    My_palette,
+    levels=levels(Damages$Damage),
+    ordered=TRUE
+  )
+    
+    leafletProxy("map", data=dataset()) %>% 
+    clearMarkers() %>%
+    addCircleMarkers(
+      radius=2,
+      opacity=0,
+      fillOpacity=1,
+      fillColor=~pal(Damage),
+      # color=~pal(Damage),
+      popup = paste(
+        "Damage:", dataset()$Damage, "<br>",
+        "Structure:", dataset()$Structure, "<br>"
+    )) 
+})
+  
+
+```
+
+
+
+
