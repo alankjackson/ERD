@@ -139,7 +139,7 @@ observe({
                   fillOpacity=0.5,
                   fillColor = ~pal(Pct_poverty),
                   popup = paste(
-                    "Block Group:", Census$Blk_grp, "<br>",
+                    "Block Group:", Census$GEOID, "<br>",
                     "Population:", Census$Pop_acs, "<br>",
                     "Households:", Census$Households, "<br>",
                     "Per Cap Income:", FormatDollar(Census$Per_cap_in), "<br>",
