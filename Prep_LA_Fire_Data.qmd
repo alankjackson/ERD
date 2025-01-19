@@ -136,7 +136,7 @@ df %>%
   facet_wrap(~Fire) +
   coord_flip() +
   labs(title="LA Fires, Current Count of Damaged Structures",
-       subtitle="As of Jan 17, 2025 ",
+       subtitle="As of Jan 19, 2025 ",
        caption="Alan Jackson, 2025")
 
 Census <- get_ACS('CA', "Los Angeles") %>% 
@@ -180,7 +180,7 @@ saveRDS(df, paste0(path, "Damages.rds"))
 
 saveRDS(Perimeters, paste0(path, "Perimeters.rds"))
 
-saveRDS(Census, paste0(path, "Census.rds"))
+# saveRDS(Census, paste0(path, "Census.rds"))
 
 
 
