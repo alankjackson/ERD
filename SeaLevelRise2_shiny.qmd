@@ -73,11 +73,11 @@ Row_diff <- NULL  # Row deselected from table
 
 # define js function for opening urls in new tab/window
 # https://stackoverflow.com/questions/41426016/shiny-open-multiple-browser-tabs
-# js_code <- "
-# shinyjs.browseURL = function(url) {
-#   window.open(url,'_blank');
-# }
-# "
+js_code <- "
+shinyjs.browseURL = function(url) {
+  window.open(url,'_blank');
+}
+"
 
 Draw_blkgrp <- function(dataset, Grp_data, pal){
   print("---- draw groups")#
@@ -248,8 +248,8 @@ br()
 # https://www.google.com/maps/@?api=1&map_action=map&center=-33.712206%2C150.311941&zoom=12
 
 # set up shiny js to be able to call our browseURL function
-# shinyjs::useShinyjs()
-# shinyjs::extendShinyjs(text = js_code, functions = 'browseURL')
+shinyjs::useShinyjs()
+shinyjs::extendShinyjs(text = js_code, functions = 'browseURL')
   
 actionButton(
   "Google",
@@ -388,7 +388,7 @@ Select_grp <- reactive({ #    Select a group with mouse
                   event <- input$map_shape_click
                   print(paste("Blk_grp:", event$id))
                   event$id
-    })
+})
 
 tif <- reactive({ #   get a tile filename
   print("tif reactive")
@@ -504,7 +504,7 @@ observeEvent(input$Google, {
   url <- paste0("https://www.google.com/maps/@?api=1&map_action=map&center=",
                 center["lat"], "%2C", 
                 center["lng"], "&zoom=", zoom)
-  browseURL(url)
+  shinyjs::js$browseURL(url)
 })
 
 #####################
