@@ -154,11 +154,21 @@ Draw_plots <- function(Grp_data, output) {
 
 make_URL <- function(MAPID, input){
   
-  center <- input$map_center
-  zoom <- input$map_zoom
-  return(paste0("https://www.google.com/maps/@?api=1&map_action=map&center=",
-                center[["lat"]], "%2C1", 
-                center[["lng"]], "&zoom=", zoom))
+  if (!is.null(Select_grp())) {
+    Poly <- dataset_grp()[dataset_grp()$censusBlockGroupFips==Select_grp(),]
+    Poly <- dePop(Poly)
+    center <- input$map_center
+    zoom <- input$map_zoom
+    return(paste0("https://www.google.com/maps/@?api=1&map_action=map&center=",
+                  center[["lat"]], "%2C1", 
+                  center[["lng"]], "&zoom=", zoom))
+  } else { 
+    center <- input$map_center
+    zoom <- input$map_zoom
+    return(paste0("https://www.google.com/maps/@?api=1&map_action=map&center=",
+                  center[["lat"]], "%2C1", 
+                  center[["lng"]], "&zoom=", zoom))
+  }
 }
 
 ####   simplify a polygon to less than 20 or thereabouts vertices
@@ -362,10 +372,19 @@ server <- function(input, output, session) {
                   center["lat"], "%2C", 
                   center["lng"], "&zoom=", zoom)
     # "https://www.google.com/maps/search/?api=1&query=markers:path:37.7833,-122.4167|37.7833,-122.4000|37.7900,-122.4000|37.7900,-122.4167"
-    shinyjs::js$browseURL(url)
+    # shinyjs::js$browseURL(url)
   })
+
+  #####################
+  #   Select Block Group with mouse
+  #####################
   
-  
+  Select_grp <- reactive({ #    Select a group with mouse
+    print("Reactive select group")
+    event <- input$map_shape_click
+    print(paste("Blk_grp:", event$id))
+    event$id
+  })
   #####################
   #   Render the table
   #####################
