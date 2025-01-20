@@ -212,7 +212,66 @@ for (state in States) {
   
 ```
 
+##    Test histograms
 
+```{r}
+
+foobar <- readRDS(paste0(path, "FEMA_extra_", "AL", ".rds"))
+
+p1 <- foobar %>% 
+  filter(Num_Claims>100) %>% 
+  ggplot(aes(x=Num_Claims)) +
+  geom_histogram() +
+  labs(title="Number of Claims per Census Blk-Grp",
+       x="Number of Claims",
+       y="Blk Grps")
+
+p2 <- foobar %>% 
+  filter(ClaimsPerHousehold>0.2) %>% 
+  ggplot(aes(x=ClaimsPerHousehold)) +
+  geom_histogram() +
+  labs(title="Number of Claims per Household",
+       x="Number of Claims per Household",
+       y="Blk Grps")
+
+gridExtra::grid.arrange(p1, p2, top="Claims>100, Claims/House>0.2")
+```
+
+##    Count polygon vertices and test ways to reduce the number
+
+```{r}
+
+#   simplify to less than 20 vertices
+dePop <- function(Single_poly, Max_vertices=20){
+  vertices <- nrow(sf::st_coordinates(Single_poly)) 
+  New_poly <- Single_poly
+  Tolerance <- 50
+  while(vertices>Max_vertices) {
+    New_poly <- sf::st_simplify(Single_poly, dTolerance = Tolerance)
+    vertices <- nrow(sf::st_coordinates(New_poly))
+    print(paste("Tolerance, Vertices", Tolerance, vertices))
+    Tolerance <- Tolerance + 50
+  }
+  return(New_poly)
+}
+
+
+foo2 <- sf::st_cast(foobar, "POLYGON", do_split = FALSE)
+foo3 <- sf::st_simplify(foo2, preserveTopology = TRUE, dTolerance = 50)
+
+unlist(lapply(1:nrow(foo2), \(i) nrow(sf::st_coordinates(foo2[i,])) ))
+unlist(lapply(1:nrow(foo3), \(i) nrow(sf::st_coordinates(foo3[i,])) ))
+
+  tmap::tmap_options(basemaps="OpenStreetMap")
+  tmap::tmap_mode("view")
+foo4 <- sf::st_simplify(foo2[18,], preserveTopology = TRUE, dTolerance = 100)  
+unlist(lapply(1:nrow(foo3[17,]), \(i) nrow(sf::st_coordinates(foo3[17,][i,])) ))
+unlist(lapply(1:nrow(foo4), \(i) nrow(sf::st_coordinates(foo4[i,])) ))
+  sf::st_as_sf(foo4) %>%
+  tmap::tm_shape() +
+  tmap::tm_polygons("Num_Claims", border.col="red", alpha=0) 
+
+```
 
 
 
