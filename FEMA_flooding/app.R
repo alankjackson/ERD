@@ -19,7 +19,7 @@ DataLocation <- "https://www.ajackson.org/ERD/FEMA/"
 # Google_notes <- "https://docs.google.com/document???????????????????"
 
 #########    for testing locally
-Local_test <- FALSE
+Local_test <- TRUE
 
 
 if ( Local_test ) {
@@ -152,51 +152,14 @@ Draw_plots <- function(Grp_data, output) {
 
 ####    Create URL for google map
 
-# make_URL <- function(MAPID, input){
-make_URL <- function(Select_grp, dataset_grp, input){
+make_URL <- function(input){
   
-  # if (!is.null(Select_grp)) {
-  #   print(paste("make_URL 1"))
-  #   Poly <- dataset_grp[dataset_grp$censusBlockGroupFips==Select_grp,]
-  #   Poly <- dePop(Poly)
-  #   foo <- as_tibble(sf::st_coordinates(Poly))  
-  #   foo <- foo[1:nrow(foo)-1,] # drop last row (duplicated coordinate)
-  #   BegX <- foo[1,]$X
-  #   BegY <- foo[1,]$Y
-  #   EndX <- foo[nrow(foo),]$X
-  #   EndY <- foo[nrow(foo),]$Y
-  #   
-  #   foo <- foo %>% unite("Z", Y:X, sep=",") %>% 
-  #     select(Z)
-  #   foo <- paste(unlist(as.list(foo)), collapse="|")
-  #   URL <- paste0("https://www.google.com/maps/dir/",
-  #                 BegY, ",", BegX, "/", EndY, ",", EndX, "/?waypoints=",
-  #                 foo
-  #   )
-  #   return(URL)
-  # } else { 
-    print(paste("make_URL 2"))
-    center <- input$map_center
-    zoom <- input$map_zoom
-    return(paste0("https://www.google.com/maps/@?api=1&map_action=map&center=",
-                  center[["lat"]], "%2C", 
-                  center[["lng"]], "&zoom=", zoom))
-  # }
-}
-
-####   simplify a polygon to less than 20 or thereabouts vertices
-
-dePop <- function(Single_poly, Max_vertices=20){
-  vertices <- nrow(sf::st_coordinates(Single_poly)) 
-  New_poly <- Single_poly
-  Tolerance <- 50
-  while(vertices>Max_vertices) {
-    New_poly <- sf::st_simplify(Single_poly, dTolerance = Tolerance)
-    vertices <- nrow(sf::st_coordinates(New_poly))
-    print(paste("Tolerance, Vertices", Tolerance, vertices))
-    Tolerance <- Tolerance + 50
-  }
-  return(New_poly)
+  print(paste("make_URL 2"))
+  center <- input$map_center
+  zoom <- input$map_zoom
+  return(paste0("https://www.google.com/maps/@?api=1&map_action=map&center=",
+                center[["lat"]], "%2C", 
+                center[["lng"]], "&zoom=", zoom))
 }
 
 #######################################################
@@ -380,13 +343,9 @@ server <- function(input, output, session) {
   observeEvent(input$Google, {
     center <- input$map_center
     zoom <- input$map_zoom
-    url <- make_URL(Select_grp(), dataset_grp(), input)
+    url <- make_URL(input)
     print(paste("Google:", center["lat"], center["lng"], zoom))
     print(url)
-    # url <- paste0("https://www.google.com/maps/@?api=1&map_action=map&center=",
-                  # center["lat"], "%2C", 
-                  # center["lng"], "&zoom=", zoom)
-    # "https://www.google.com/maps/search/?api=1&query=markers:path:37.7833,-122.4167|37.7833,-122.4000|37.7900,-122.4000|37.7900,-122.4167"
     shinyjs::js$browseURL(url)
   })
 
