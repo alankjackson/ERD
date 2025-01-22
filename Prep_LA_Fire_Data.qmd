@@ -56,7 +56,8 @@ Palisades <- Palisades %>%
 Perimeters <- read_sf(paste0(in_path, "CA_Perimeters_NIFC_FIRIS_public_view/",
                              "CA_Perimeters_NIFC_FIRIS_public_view.shp")) %>% 
   filter(stringr::str_detect(incident_n, "Eaton|PALISADES")) %>% 
-  st_transform(googlecrs)
+  st_transform(googlecrs) %>% 
+  st_make_valid()
 
 summary(Perimeters)
 
