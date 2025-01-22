@@ -77,14 +77,18 @@ checkboxGroupInput("Structure_display",
                      "Commercial"="Commercial",  
                      "Other"="Other"))
 
+br()
+
+tags$b(textOutput("date"))
+
+br()
+
 ```
 
 Poverty data from the 2020 ACS census data, displayed by block-group.
 
 Damage and structure data from the state of California Department of Forestry
 and Fire Protection website.
-
-Data is current as of **`r Date_string`**
 
 "Other" is almost entirely "Utility Misc Structure".
 
@@ -97,6 +101,10 @@ leafletOutput('map')
 
 ```{r}
 #| context: server
+
+output$date <- renderText({ 
+  paste("Data is current as of", Date_string) 
+})
 
 dataset <- reactive({
   if (is.null(input$Structure_display)) {
