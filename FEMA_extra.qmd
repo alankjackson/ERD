@@ -241,7 +241,7 @@ gridExtra::grid.arrange(p1, p2, top="Claims>100, Claims/House>0.2")
 
 ```{r}
 
-#   simplify to less than 20 vertices
+#   simplify a polygon to less than 20 vertices
 dePop <- function(Single_poly, Max_vertices=20){
   vertices <- nrow(sf::st_coordinates(Single_poly)) 
   New_poly <- Single_poly
@@ -255,6 +255,31 @@ dePop <- function(Single_poly, Max_vertices=20){
   return(New_poly)
 }
 
+foo4 <- dePop(foo2[58,], 15)
+foo5 <- as_tibble(sf::st_coordinates(foo4))  
+foo5 <- foo5[1:nrow(foo5)-1,] # drop last row (duplicated coordinate)
+BegX <- foo5[1,]$X
+BegY <- foo5[1,]$Y
+EndX <- foo5[nrow(foo5),]$X
+EndY <- foo5[nrow(foo5),]$Y
+  
+foo5 <- foo5 %>% unite("Z", Y:X, sep=",") %>% 
+  select(Z)
+foo5 <- paste(unlist(as.list(foo5)), collapse="|")
+# URL <- paste0("https://www.google.com/maps/@?api=1&map_action=map&center=",
+#                   "--lat--", "%2C1", 
+#                   "--lng--", "&zoom=", "--zoom--",
+# URL <- paste0("https://www.google.com/maps/dir/",
+URL <- paste0("https://www.google.com/maps/embed",
+                  "&poly=|",
+              "?pb=!1m18!1m12!1m3!1d10000!2d-74.0060!3d40.7128!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0%3A0x0!2sNew%20York!5e0!3m2!1sen!2sus!4v1674598900!5m2!1sen!2sus",
+                  # "32.92563,-88.206393/32.932093,-88.175329/?waypoints=",
+                  # BegY, ",", BegX, "/", EndY, ",", EndX, "/?waypoints=",
+                  # BegY, ",", BegX, "/", EndY, ",", EndX, "/?waypoints=",
+                  foo5,"|"
+              )
+    # "https://www.google.com/maps/search/?api=1&query=markers:path:37.7833,-122.4167|37.7833,-122.4000|37.7900,-122.4000|37.7900,-122.4167"
+
 
 foo2 <- sf::st_cast(foobar, "POLYGON", do_split = FALSE)
 foo3 <- sf::st_simplify(foo2, preserveTopology = TRUE, dTolerance = 50)
@@ -265,8 +290,9 @@ unlist(lapply(1:nrow(foo3), \(i) nrow(sf::st_coordinates(foo3[i,])) ))
   tmap::tmap_options(basemaps="OpenStreetMap")
   tmap::tmap_mode("view")
 foo4 <- sf::st_simplify(foo2[18,], preserveTopology = TRUE, dTolerance = 100)  
-unlist(lapply(1:nrow(foo3[17,]), \(i) nrow(sf::st_coordinates(foo3[17,][i,])) ))
-unlist(lapply(1:nrow(foo4), \(i) nrow(sf::st_coordinates(foo4[i,])) ))
+foo4 <- dePop(foo2[58,], 15)
+# unlist(lapply(1:nrow(foo3[17,]), \(i) nrow(sf::st_coordinates(foo3[17,][i,])) ))
+# unlist(lapply(1:nrow(foo4), \(i) nrow(sf::st_coordinates(foo4[i,])) ))
   sf::st_as_sf(foo4) %>%
   tmap::tm_shape() +
   tmap::tm_polygons("Num_Claims", border.col="red", alpha=0) 
