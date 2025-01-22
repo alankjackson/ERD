@@ -162,6 +162,15 @@ make_URL <- function(input){
                 center[["lng"]], "&zoom=", zoom))
 }
 
+####    Calculate a zoom level
+
+make_Zoom <- function(Poly){
+  bbox <- sf::st_bbox(Poly)
+  extent <- max(abs(bbox[[1]]-bbox[[3]]), abs(bbox[[2]]-bbox[[4]]))
+  print(paste("make_Zoom", extent, sqrt(6/extent)))
+  return(round(log(8000/extent)))
+}
+
 #######################################################
 # UI 
 #######################################################
@@ -365,7 +374,7 @@ server <- function(input, output, session) {
   
   output$data <- DT::renderDataTable({
     print("--10--")
-    dataset_grp() %>% sf::st_drop_geometry()} %>% 
+    dataset_grp() %>% sf::st_drop_geometry()} %>%
       select(censusBlockGroupFips, Pop_acs, ClaimsPerHousehold, Pct_poverty,
              Num_Claims_Own, Num_Claims_Rent),
     colnames=c("Block Grp", 
@@ -373,7 +382,8 @@ server <- function(input, output, session) {
                "Claims House", 
                "% Poverty", 
                "Owner Claims",
-               "Renter Claims")
+               "Renter Claims"),
+    selection = 'single'
 )
 
 #############    Table selection controls
@@ -384,7 +394,6 @@ Row_list <-reactiveValues(rows=list()) # what rows are selected?
 observeEvent(input$data_rows_selected, ignoreNULL = FALSE, {
   Row_list$rows <- input$data_rows_selected
 }) #END OBSERVE EVENT
-
 
 #####################
 #   Highlight and remove highlights for polygons from table
@@ -398,11 +407,14 @@ observeEvent(Row_list$rows, ignoreNULL = FALSE, {
   rows <- Row_list$rows
   Row_list$oldrows <- rows
   if (Sel()) { # at least one row is selected
+    LongLat <- sf::st_coordinates(sf::st_centroid(dataset_grp()[Row_added,]))
+    Zoom <- make_Zoom(dataset_grp()[Row_added,])
     leafletProxy("map") %>%
       addPolylines(data=dataset_grp()[Row_added,],
                    color="red",
                    layerId=paste0(dataset_grp()[Row_added,]$censusBlockGroupFips, "_highlight"),
-                   weight=4)
+                   weight=4) %>% 
+      setView(LongLat[[1]], LongLat[[2]], zoom=Zoom)
   }
   if (!is.null(Row_dropped) & length(Row_dropped)>0){ # a row was unselected
     leafletProxy("map") %>%
