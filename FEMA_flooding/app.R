@@ -19,7 +19,7 @@ DataLocation <- "https://www.ajackson.org/ERD/FEMA/"
 # Google_notes <- "https://docs.google.com/document???????????????????"
 
 #########    for testing locally
-Local_test <- TRUE
+Local_test <- FALSE
 
 
 if ( Local_test ) {
@@ -94,7 +94,7 @@ Draw_blkgrp <- function(dataset, Grp_data, pal, input){
         "Block Group:", Grp_data$censusBlockGroupFips, "<br>",
         "Pop at risk:", Grp_data$Pop_acs, "<br>",
         "Homes at risk:", Grp_data$Households, "<br>",
-        "Claims Own, Rent, Mobile:", Grp_data$Num_Claims_Own,",",
+        "Own, Rent, Mobile:<br>",    Grp_data$Num_Claims_Own,",",
                                      Grp_data$Num_Claims_Rent,",",
                                      Grp_data$Num_Claims_Mobile,"<br>",
         "Claims per house:", Grp_data$ClaimsPerHousehold, "<br>",
@@ -131,8 +131,8 @@ Draw_plots <- function(Grp_data, output) {
     filter(Num_Claims>100) %>% 
     ggplot(aes(x=Num_Claims)) +
     geom_histogram() +
-    labs(title="Number of Claims per Census Blk-Grp",
-         x="Number of Claims",
+    labs(title="# of Claims/Blk-Grp",
+         x="# of Claims",
          y="Blk Grps")
   
   p2 <- Grp_data %>% 
@@ -140,13 +140,18 @@ Draw_plots <- function(Grp_data, output) {
     filter(ClaimsPerHousehold>0.2) %>% 
     ggplot(aes(x=ClaimsPerHousehold)) +
     geom_histogram() +
-    labs(title="Number of Claims per Household",
-         x="Number of Claims per Household",
+    labs(title="# of Claims/Household",
+         x="# of Claims/Household",
          y="Blk Grps")
   
   output$plot <- renderPlot({
     gridExtra::grid.arrange(p1, p2, 
-                            top="Claims>100, Claims/House>0.2")
+                            top = grid::textGrob(
+                              "Claims>100, Claims/House>0.2",
+                              # gp = gpar(fontfamily = "HersheySerif" , fontsize = 9),
+                              gp = grid::gpar(fontsize = 10)
+                            ))
+                            # top="Claims>100, Claims/House>0.2")
   })
 }
 
@@ -160,6 +165,18 @@ make_URL <- function(input){
   return(paste0("https://www.google.com/maps/@?api=1&map_action=map&center=",
                 center[["lat"]], "%2C", 
                 center[["lng"]], "&zoom=", zoom))
+}
+
+####    Create URL for FEMA flood map
+
+make_FEMA <- function(input){
+  # https://msc.fema.gov/portal/search?AddressQuery=%20-92.41567874975726%2C42.54086937934763
+  print(paste("make_URL 3"))
+  center <- input$map_center
+  zoom <- input$map_zoom
+  return(paste0("https://msc.fema.gov/portal/search?AddressQuery=",
+                center[["lng"]], "%2C", 
+                center[["lat"]]))
 }
 
 ####    Calculate a zoom level
@@ -232,11 +249,19 @@ ui <- page_fluid(
                          "Claims per House"="ClaimsPerHousehold")),
           
           # HTML("<hr>"),
-          
+          splitLayout(cellWidths = c("50%", "50%"),
+          column(1,
           actionButton(
             "Google",
-            "Open Google Maps"
-          )
+            "Google"
+            # width="50%"
+          )),
+          column(6,
+          actionButton(
+            "FEMA",
+            "FEMA"
+            # width="50%"
+          )))
           
         # )
       ),
@@ -357,6 +382,20 @@ server <- function(input, output, session) {
     print(url)
     shinyjs::js$browseURL(url)
   })
+
+  #####################
+  #   Open a FEMA map
+  #####################
+  
+  observeEvent(input$FEMA, {
+    center <- input$map_center
+    zoom <- input$map_zoom
+    url <- make_FEMA(input)
+    print(paste("FEMA:", center["lat"], center["lng"], zoom))
+    print(url)
+    shinyjs::js$browseURL(url)
+  })
+
 
   #####################
   #   Select Block Group with mouse
