@@ -39,6 +39,11 @@ get_ACS <- function(State, Year) {
                 Fam_in_poverty="B17010_002", # Families in poverty, blk grp
                 Aggreg_inc="B19025_001", # Aggregate household income, blk grp
                 Households="B11012_001", # Households, blk grp
+                Renters="B25008_003", # Renters pop, blk grp
+                RentersH="B25003_003", # Renters houses, blk grp
+                Owners="B25008_002", #   Home owners pop blk grp
+                OwnersH="B25003_002", #   Home owners houses blk grp
+                Mobile="B25024_010", #  Mobile homes blk grp
                 Med_age="B01002_001") # median age, blk grp
   ACS <- get_acs(geography="block group",
                  variables=acs_vars,
@@ -51,7 +56,9 @@ get_ACS <- function(State, Year) {
     mutate(Pct_poverty=as.integer(signif(100*Fam_in_povertyE/FamE, 0))) %>% 
     select(GEOID, Pop_acs=PopE, Med_inc=Med_incE, Per_cap_in=Per_cap_incE,
            Fam=FamE, Fam_in_poverty=Fam_in_povertyE, Aggreg_inc=Aggreg_incE,
-           Pct_poverty, Households=HouseholdsE, Med_ageE=Med_ageE)
+           Pct_poverty, Households=HouseholdsE, Renters=RentersE, 
+           RentersH=RentersHE, Owners=OwnersE, OwnersH=OwnersHE, 
+           Mobile=MobileE, Med_ageE=Med_ageE)
   
   ACS <- sf::st_transform(ACS, googlecrs)  
   
@@ -162,7 +169,7 @@ state="AL"
 
 for (state in States) {
   
-  if (State=="VI") {next}
+  if (state=="VI") {next}
   print(paste("---->", state))
   #   First get block groups for 2020 census  
   Census2020 <- get_ACS(state, 2020)
@@ -298,6 +305,36 @@ foo4 <- dePop(foo2[58,], 15)
   tmap::tm_polygons("Num_Claims", border.col="red", alpha=0) 
 
 ```
+
+##    Test out creating a pdf report
+
+```{r}
+
+My_blkgrp <- "190130026045"
+state <- "IA"
+comment <- "This is my comment about this data"
+# "https://www.google.com/maps/@?api=1&map_action=map&center=42.5399908708896%2C-92.4296092987061&zoom=13"
+
+params <- list()
+
+pdf <-  rmarkdown::render(tempReport, 
+          output_file = "FEMA_flooding.pdf",
+          params = params,
+          envir = new.env(parent = globalenv())
+        )
+
+```
+
+
+
+
+
+
+
+
+
+
+
 
 
 
