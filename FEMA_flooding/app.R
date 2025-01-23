@@ -188,6 +188,32 @@ make_Zoom <- function(Poly){
   return(round(log(8000/extent)))
 }
 
+####    Find the table row corresponding to a Blk-grp
+
+find_Row <- function(Blk_grp, Grp_data){
+  print(paste("find_Row", Blk_grp))
+  grep(Blk_grp, Grp_data$censusBlockGroupFips)
+}
+
+####    Build PDF report
+
+make_Pdf <- function(filename, input){
+  # pdf(file = filename)
+  # plot(cars)
+  # dev.off()  
+  
+  # Set up parameters to pass to Rmd document
+  params <- list(n = input$slider)
+  
+  # Knit the document, passing in the `params` list, and eval it in a
+  # child of the global environment (this isolates the code in the document
+  # from the code in this app).
+  rmarkdown::render(tempReport, output_file = filename,
+                    params = params,
+                    envir = new.env(parent = globalenv())
+  )
+}
+
 #######################################################
 # UI 
 #######################################################
@@ -248,6 +274,7 @@ ui <- page_fluid(
                          "Num of Claims"="Num_Claims",
                          "Claims per House"="ClaimsPerHousehold")),
           
+          ####    Google and FEMA buttons
           # HTML("<hr>"),
           splitLayout(cellWidths = c("50%", "50%"),
           column(1,
@@ -261,7 +288,14 @@ ui <- page_fluid(
             "FEMA",
             "FEMA"
             # width="50%"
-          )))
+          ))),
+          
+          #####   Download PDF
+          
+          textInput("pdflabel", "Label for the PDF", "---"),
+          div(id="dwnbutton", 
+            downloadButton("pdfButton", "Download PDF")
+          )
           
         # )
       ),
@@ -396,17 +430,41 @@ server <- function(input, output, session) {
     shinyjs::js$browseURL(url)
   })
 
-
   #####################
   #   Select Block Group with mouse
   #####################
   
-  Select_grp <- reactive({ #    Select a group with mouse
+  Select_grp <- observe({ #    Select a group with mouse
     print("Reactive select group")
     event <- input$map_shape_click
     print(paste("Blk_grp:", event$id))
+    print(paste("proxy event"))
+    req(event$id)
+    proxy %>% DT::selectRows(as.numeric(find_Row(event$id, Grp_data())))
     event$id
   })
+
+  #####################
+  #   Generate & Download PDF
+  #####################
+  
+  observeEvent(Sel(), {
+    if (Sel()) {
+      enable("pdfButton")
+      shinyjs::runjs("$('#dwnbutton').removeAttr('title');")
+    } else {
+      disable("pdfButton")
+      runjs("$('#dwnbutton').attr('title', 'Select a Block Group');") 
+    }
+  })
+  
+  output$pdfButton <- downloadHandler("FEMA_flooding.pdf", function(theFile) {
+    # Here, your pdf-generator is provided with the "filename" that is used
+    # to provide the file for the user.
+      make_Pdf(theFile, input)
+  })
+  
+  
   #####################
   #   Render the table
   #####################
@@ -424,8 +482,16 @@ server <- function(input, output, session) {
                "Renter Claims"),
     selection = 'single'
 )
+  
+proxy <- DT::dataTableProxy('data')
 
 #############    Table selection controls
+
+# observe(event$id, {
+#   print(paste("proxy event", Select_grp()))
+#   proxy %>% selectRows(as.numeric(input$rows))
+# })
+
 Sel <- reactive({!is.null(input$data_rows_selected)}) # is there a selection?
 
 Row_list <-reactiveValues(rows=list()) # what rows are selected?
