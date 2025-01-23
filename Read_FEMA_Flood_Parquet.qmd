@@ -35,7 +35,7 @@ expand_box <- function(bbox, pct=0.2){
 ##        Set up connection to file and pull out Harris county
 
 ```{r}
-FEMA <- arrow::open_dataset(paste0(pq_path,"FimaNfipClaims.parquet"))
+FEMA <- arrow::open_dataset(paste0(pq_path,"FimaNfipClaims (2).parquet"))
 
 FEMA_all <- FEMA %>% collect()
 
