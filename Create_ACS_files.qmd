@@ -1,0 +1,109 @@
+---
+title: "Create standard Census files by state"
+author: "Alan Jackson"
+format: html
+editor: source
+---
+
+##    Standard census files
+
+By block-group, files to be later joined to FEMA flooding data.
+
+Data from 2020 ACS and 2019 ACS to capture lost block groups
+
+All converted to EPSG:4326
+
+
+
+```{r setup}
+
+library(tidyverse)
+library(gt)
+library(tidycensus)
+
+googlecrs <- "EPSG:4326"
+
+# path <- "/home/ajackson/Dropbox/Rprojects/ERD/FEMA/"
+path <- "/home/ajackson/Dropbox/Rprojects/Curated_Data_Files/Census_data/Flood/"
+
+```
+
+##    Functions
+
+```{r}
+
+options(tigris_use_cache = TRUE)
+
+get_ACS <- function(State, Year) {
+  # Now let's prepare the block-group data
+  
+  acs_vars <- c(Pop="B01001_001", # ACS population estimate
+                Med_inc="B19013_001", # median household income, blk grp
+                Per_cap_inc="B19301_001", # Per capita income, blk grp
+                Fam="B17010_001", # Families, blk grp
+                Fam_in_poverty="B17010_002", # Families in poverty, blk grp
+                Aggreg_inc="B19025_001", # Aggregate household income, blk grp
+                Households="B11012_001", # Households, blk grp
+                Renters="B25008_003", # Renters pop, blk grp
+                RentersH="B25003_003", # Renters houses, blk grp
+                Owners="B25008_002", #   Home owners pop blk grp
+                OwnersH="B25003_002", #   Home owners houses blk grp
+                Mobile="B25024_010", #  Mobile homes blk grp
+                Med_age="B01002_001") # median age, blk grp
+  ACS <- get_acs(geography="block group",
+                 variables=acs_vars,
+                 year=Year,
+                 state=State,
+                 output="wide",
+                 geometry=TRUE)
+  
+  ACS <- ACS %>% 
+    mutate(Pct_poverty=as.integer(signif(100*Fam_in_povertyE/FamE, 0))) %>% 
+    select(GEOID, Pop_acs=PopE, Med_inc=Med_incE, Per_cap_in=Per_cap_incE,
+           Fam=FamE, Fam_in_poverty=Fam_in_povertyE, Aggreg_inc=Aggreg_incE,
+           Pct_poverty, Households=HouseholdsE, Renters=RentersE, 
+           RentersH=RentersHE, Owners=OwnersE, OwnersH=OwnersHE, 
+           Mobile=MobileE, Med_ageE=Med_ageE)
+  
+  ACS <- sf::st_transform(ACS, googlecrs)  
+  
+  return(ACS)
+}
+
+```
+
+##    Loop through states and attach census data, then save output by state
+
+```{r}
+
+States <- c("AL", "NY", "AK", "AZ", "AR", "CA", "LA", "CO", "CT", "DE", "DC",
+"FL", "GA", "MO", "SC", "HI", "ID", "IL", "IN", "KY", "IA", "KS", "ME", "MD",
+"MA", "MI", "MN", "MS", "MT", "NE", "NV", "NH", "NJ", "NM", "NC", "ND", "OH",
+"OK", "OR", "PA", "TX", "RI", "SD", "TN", "UT", "VT", "VA", "WA", "WV", "WI",
+"WY", "PR")
+
+state="AL"
+
+for (state in States) {
+  
+  print(paste("---->", state))
+  #   First get block groups for 2020 census  
+  Census2020 <- as_tibble(get_ACS(state, 2020)) # hide geometry
+  Census2015 <- as_tibble(get_ACS(state, 2019))
+  
+  Unmatched <- anti_join(Census2015, Census2020, by="GEOID") # "lost" blk grps
+  
+  Total <- bind_rows(Census2020, Unmatched) %>% 
+    filter(!is.na(Pop_acs)) %>% 
+    filter(Pop_acs>50) %>% 
+    sf::st_sf(sf_column_name = "geometry") %>% 
+    sf::st_as_sf() %>% 
+    sf::st_make_valid()
+  
+  saveRDS(Total, paste0(path, "ACS_", state, ".rds"))
+  
+}
+
+
+  
+```
