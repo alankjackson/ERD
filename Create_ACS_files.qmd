@@ -40,7 +40,8 @@ get_ACS <- function(State, Year) {
   acs_vars <- c(Pop="B01001_001", # ACS population estimate
                 Med_inc="B19013_001", # median household income, blk grp
                 Per_cap_inc="B19301_001", # Per capita income, blk grp
-                Fam="B17010_001", # Families, blk grp
+                # Fam="B17010_001", # Families, blk grp
+                Fam="B11001_002", # Families, blk grp
                 Fam_in_poverty="B17010_002", # Families in poverty, blk grp
                 Aggreg_inc="B19025_001", # Aggregate household income, blk grp
                 Households="B11012_001", # Households, blk grp
