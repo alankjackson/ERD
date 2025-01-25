@@ -71,6 +71,11 @@ get_ACS <- function(State, Year) {
 
 ```{r}
 
+Mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
 FEMA2 <- FEMA %>% 
   select(dateOfLoss, state, countyCode, ratedFloodZone, occupancyType,
          amountPaidOnBuildingClaim, yearOfLoss, buildingDamageAmount,
@@ -85,6 +90,7 @@ FEMA2 <- FEMA2 %>%
   filter(!is.na(censusBlockGroupFips)) %>% 
   select(dateOfLoss, ratedFloodZone, occupancyType, amountPaidOnBuildingClaim,
        yearOfLoss,  causeOfDamage, floodEvent, waterDepth, censusBlockGroupFips,
+       buildingPropertyValue, buildingReplacementCost, 
        nfipCommunityName, state, countyCode) %>% 
   mutate(Month=lubridate::month(dateOfLoss, label=TRUE)) %>% 
   mutate(Occupancy=case_when(
@@ -96,6 +102,7 @@ FEMA2 <- FEMA2 %>%
 #   Collapse data by GEOID
 
 FEMA3 <- FEMA2 %>% 
+  replace_na(list(nfipCommunityName="Unk")) %>% 
   mutate(week_yr=paste(lubridate::year(dateOfLoss), 
                        lubridate::week(dateOfLoss))) %>% 
   group_by(censusBlockGroupFips, Occupancy) %>% 
@@ -103,6 +110,7 @@ FEMA3 <- FEMA2 %>%
               Num_dates=n_distinct(week_yr),
               # Year=first(yearOfLoss),
               # Month=first(Month),
+              nfipCommunityName=Mode(nfipCommunityName),
               State=first(state),
               County=first(countyCode)) %>% 
   ungroup() %>% 
@@ -113,16 +121,23 @@ FEMA3 <- FEMA2 %>%
   mutate(Num_Claims=Num_Claims_Own+Num_Claims_Rent+Num_Claims_Mobile,
          Num_dates=Num_dates_Own+Num_dates_Rent+Num_dates_Mobile) 
 
+#   Look at long storm names to shorten them
+
+Storm_names <- FEMA2$floodEvent %>% unique()
+foo <- Storm_names[order(nchar(Storm_names), Storm_names)]
+
 #   Pull out storm names to later add back to file
 
 Storms <- FEMA2 %>% 
   filter(!is.na(censusBlockGroupFips)) %>% 
   mutate(floodEvent=stringr::str_remove(floodEvent, "Hurricane ")) %>% 
   mutate(floodEvent=stringr::str_replace(floodEvent, "Tropical Storm", "T.S.")) %>% 
+  mutate(floodEvent=stringr::str_replace(floodEvent, "Thunderstorms", "T-Storms")) %>% 
   replace_na(list(floodEvent="Unk")) %>% 
   mutate(floodEvent=paste(floodEvent, yearOfLoss, Month)) %>% 
   group_by(censusBlockGroupFips) %>% 
-    summarize(floodEvent=paste(unique(floodEvent), collapse=", ")) %>% 
+    summarize(floodEvents=paste(unique(floodEvent), collapse=", "),
+              floodNum=paste(table(floodEvent),collapse=", ")) %>% 
   ungroup()  
 
 FEMA3 <-  FEMA3 %>% 
@@ -310,10 +325,19 @@ foo4 <- dePop(foo2[58,], 15)
 
 ```{r}
 
+FEMA <- readRDS(paste0(path, "FEMA_extra_", "IA", ".rds"))
 My_blkgrp <- "190130026045"
-state <- "IA"
+FEMA_data <- FEMA %>% filter(censusBlockGroupFips==My_blkgrp)
+County_code <- stringr::str_sub(FEMA_data$censusBlockGroupFips, start=3, end=5)
+state <- FEMA_data$State
 comment <- "This is my comment about this data"
+County <- tigris::list_counties(state) %>% 
+          filter(county_code==County_code)
+# block_groups <- tigris::block_groups("IA", county = NULL)
 # "https://www.google.com/maps/@?api=1&map_action=map&center=42.5399908708896%2C-92.4296092987061&zoom=13"
+
+Title <-paste("Report for Block Group", My_blkgrp, "in", county, ",", state)
+Intro <- paste("")
 
 params <- list()
 
@@ -325,7 +349,13 @@ pdf <-  rmarkdown::render(tempReport,
 
 ```
 
+##    County fips file
 
+```{r}
+
+Fips_county <- tigris::list_counties("AL")
+
+```
 
 
 
