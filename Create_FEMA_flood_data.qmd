@@ -1,0 +1,183 @@
+---
+title: "Create_FEMA_data"
+author: "Alan Jackson"
+format: html
+editor: source
+---
+
+
+## Put together FEMA flood data not on the coast
+
+
+```{r setup}
+
+library(tidyverse)
+library(gt)
+library(tidycensus)
+
+googlecrs <- "EPSG:4326"
+
+pq_path <- "/home/ajackson/Dropbox/Rprojects/ERD/Data/"
+acs_path <- "/home/ajackson/Dropbox/Rprojects/Curated_Data_Files/Census_data/Flood/"
+path <- "/home/ajackson/Dropbox/Rprojects/ERD/FEMA/"
+
+FEMA <- readRDS(paste0(pq_path, "FEMA_Flood.rds"))
+
+```
+
+##        Functions
+
+```{r}
+
+Mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+```
+
+##        Clean up data
+
+```{r}
+
+FEMA2 <- FEMA %>% 
+  select(dateOfLoss, state, countyCode, ratedFloodZone, occupancyType,
+         amountPaidOnBuildingClaim, yearOfLoss, buildingDamageAmount,
+         buildingPropertyValue, buildingReplacementCost, causeOfDamage, 
+         floodEvent, waterDepth, floodZoneCurrent, censusTract, 
+         censusBlockGroupFips, nfipCommunityName, eventDesignationNumber) %>% 
+  arrange(dateOfLoss)  %>% 
+  filter(occupancyType %in% c(1,2,3,11,12,13,14,15))
+
+
+FEMA2 <- FEMA2 %>% 
+  filter(!is.na(censusBlockGroupFips)) %>% 
+  select(dateOfLoss, ratedFloodZone, occupancyType, amountPaidOnBuildingClaim,
+       yearOfLoss,  causeOfDamage, floodEvent, waterDepth, censusBlockGroupFips,
+       buildingPropertyValue, buildingReplacementCost, 
+       nfipCommunityName, state, countyCode) %>% 
+  mutate(Month=lubridate::month(dateOfLoss, label=TRUE)) %>% 
+  mutate(Occupancy=case_when(
+            occupancyType==1 | occupancyType==11 | occupancyType==15 ~ "Own",
+            occupancyType==14 ~ "Mobile",
+            .default="Rent"
+  ))      
+
+#   Collapse data by GEOID
+
+FEMA3 <- FEMA2 %>% 
+  replace_na(list(nfipCommunityName="Unk")) %>% 
+  mutate(week_yr=paste(lubridate::year(dateOfLoss), 
+                       lubridate::week(dateOfLoss))) %>% 
+  group_by(censusBlockGroupFips, Occupancy) %>% 
+    summarise(Num_Claims=n(),
+              Num_dates=n_distinct(week_yr),
+              # Year=first(yearOfLoss),
+              # Month=first(Month),
+              nfipCommunityName=Mode(nfipCommunityName),
+              State=first(state),
+              County=first(countyCode)) %>% 
+  ungroup() %>% 
+  pivot_wider(names_from = Occupancy, values_from = c(Num_Claims, Num_dates),
+              values_fill=0) %>% 
+  replace_na(list(Num_Claims_Mobile=0,
+                  Num_dates_Mobile=0)) %>%  
+  mutate(Num_Claims=Num_Claims_Own+Num_Claims_Rent+Num_Claims_Mobile,
+         Num_dates=Num_dates_Own+Num_dates_Rent+Num_dates_Mobile) 
+
+#   Look at long storm names to shorten them
+
+Storm_names <- FEMA2$floodEvent %>% unique()
+foo <- Storm_names[order(nchar(Storm_names), Storm_names)] # look at names
+
+#   Pull out storm names to later add back to file
+
+Storms <- FEMA2 %>% 
+  filter(!is.na(censusBlockGroupFips)) %>% 
+  mutate(floodEvent=stringr::str_replace(floodEvent, "Hurricane ", "H. ")) %>% 
+  mutate(floodEvent=stringr::str_replace(floodEvent, "Tropical Storm", "T.S.")) %>% 
+  mutate(floodEvent=stringr::str_replace(floodEvent, "Thunderstorms", "T-Storms")) %>% 
+  replace_na(list(floodEvent="Unk")) %>% 
+  mutate(floodEvent=paste(floodEvent, yearOfLoss, Month)) %>% 
+  group_by(censusBlockGroupFips) %>% 
+    summarize(floodEvents=paste(unique(floodEvent), collapse=", "),
+              floodNum=paste(table(floodEvent),collapse=", ")) %>% 
+  ungroup()  
+
+FEMA3 <-  FEMA3 %>% 
+  inner_join(., Storms, by="censusBlockGroupFips")  %>% 
+  filter(!State=="UN") %>% 
+  filter(Num_Claims>9) # 10 or more claims total
+
+# causeOfDamage:
+# 0 : Other causes; 
+# 1 : Tidal water overflow; 
+# : Stream, river, or lake overflow; 
+# 3 : Alluvial fan overflow; 
+# 4 : Accumulation of rainfall or snowmelt; 
+# 7 : Erosion-demolition; 
+# 8 : Erosion-removal; 
+# 9 : Earth movement, landslide, land subsidence, sinkholes, etc.
+
+
+###   occupancy types
+# 1=single family residence; 
+# 2 = 2 to 4 unit residential building; 
+# 3 = residential building with more than 4 units; 
+# 4 = Non-residential building; 
+# 6 = Non Residential - Business; 
+# 11 = Single-family residential building with the exception of a mobile home or a single residential unit within a multi unit building; 
+# 12 = A residential non-condo building with 2, 3, or 4 units seeking insurance on all units; 
+# 13 = A residential non-condo building with 5 or more units seeking insurance on all units; 
+# 14 = Residential mobile/manufactured home; 
+# 15 = Residential condo association seeking coverage on a building with one or more units; 
+# 16 = Single residential unit within a multi-unit building; 
+# 17 = Non-residential mobile/manufactured home; 
+# 18 = A non-residential building; 
+# 19 = a non-residential unit within a multi-unit building;
+
+```
+
+##    Loop through states and attach census data, then save output by state
+
+```{r}
+
+States <- unique(FEMA3$State)
+
+state="AL"
+
+for (state in States) {
+  
+  if (state=="VI") {next}
+  print(paste("---->", state))
+  
+  Census <- readRDS(paste0(acs_path, "ACS_", state, ".rds"))
+  
+  foo <- FEMA3 %>% 
+    filter(State==state) %>% 
+    left_join(., Census, by=join_by("censusBlockGroupFips"=="GEOID")) %>%  
+    sf::st_as_sf() 
+  
+  #   No match - save for reference. It's a small number
+  
+  Remainder <- foo %>% 
+    sf::st_drop_geometry() %>% 
+    filter(is.na(Pop_acs)) %>% 
+    select(-Pop_acs, -Med_inc, -Per_cap_in, -Fam, -Fam_in_poverty, -Aggreg_inc,
+           -Pct_poverty, -Households, -Med_ageE)  
+  
+  Good_data <- foo %>% 
+    filter(!is.na(Pop_acs)) %>% 
+    filter(Pop_acs>50) %>% 
+    mutate(ClaimsPerHousehold=signif(Num_Claims/Households, 2)) %>% 
+    sf::st_as_sf() %>% 
+    sf::st_make_valid()
+  
+  saveRDS(Remainder, paste0(path, "FEMA_extra_remainder_", state, ".rds"))
+  saveRDS(Good_data, paste0(path, "FEMA_extra_", state, ".rds"))
+  
+}
+
+
+  
+```
