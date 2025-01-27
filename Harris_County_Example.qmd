@@ -381,6 +381,7 @@ box <- TempMap %>%
 #| warning: false
 #| error: false
 #| output: asis
+# https://bookdown.org/yihui/rmarkdown-cookbook/multi-column.html
 res <- pmap_chr(df, \(label, map, table, floodbar, yearbar) {
   knitr::knit_child(text = c(
     # "\\newpage",
