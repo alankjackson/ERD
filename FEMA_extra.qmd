@@ -64,7 +64,16 @@ get_ACS <- function(State, Year) {
   
   return(ACS)
 }
-
+#   Expand box by 20% to give a little extra room with extra on lower right
+expand_box <- function(bbox, pct=0.2, offset=1){
+  Dx <- (bbox[["xmax"]]-bbox[["xmin"]])*pct
+  Dy <- (bbox[["ymax"]]-bbox[["ymin"]])*pct
+  bbox["xmin"] <- bbox["xmin"] - Dx
+  bbox["xmax"] <- bbox["xmax"] + Dx*offset
+  bbox["ymin"] <- bbox["ymin"] - Dy*offset
+  bbox["ymax"] <- bbox["ymax"] + Dy
+  return(bbox)
+}
 ```
 
 ##        Clean up data
@@ -333,11 +342,119 @@ state <- FEMA_data$State
 comment <- "This is my comment about this data"
 County <- tigris::list_counties(state) %>% 
           filter(county_code==County_code)
+City <- stringr::str_replace(FEMA_data$nfipCommunityName, "Unk", "")
+Tempdir <- tempdir()
+
 # block_groups <- tigris::block_groups("IA", county = NULL)
 # "https://www.google.com/maps/@?api=1&map_action=map&center=42.5399908708896%2C-92.4296092987061&zoom=13"
 
-Title <-paste("Report for Block Group", My_blkgrp, "in", county, ",", state)
-Intro <- paste("")
+Title <-paste("Report for Block Group", My_blkgrp, "in", City,
+              County, "county,", state)
+Intro <- paste0("Data from FEMA, as of 3 Jan 2025, claims since 1978\n
+                This block group has a poverty level of ",
+               FEMA_data$Pct_poverty, "%", "\n",
+               "and a per capita income of ", scales::dollar(FEMA_data$Per_cap_in), ".\n\n",
+               "There have been ", FEMA_data$Num_dates, " flood events."
+               )  
+
+#####################   Make demographics table
+Table <-
+  FEMA_data %>% sf::st_drop_geometry() %>% 
+  select(Claims_Owner=Num_Claims_Own, Claims_Renter=Num_Claims_Rent, 
+         Claims_Total=Num_Claims, Pop_Owner=Owners, Pop_Renter=Renters, 
+         Pop_Total=Pop_acs, House_Owner=OwnersH, House_Renter=RentersH,
+         House_Total=Households) %>% 
+  pivot_longer(everything(),
+               values_to="Values",
+               names_sep="_",
+               names_to=c("Category", "Subset")) %>% 
+  pivot_wider(names_from=Category,
+              values_from = Values) %>% 
+  gt() %>% 
+    tab_header(title="Claim and Demographic Data") %>% 
+    cols_label(
+      Subset="Status",
+      Claims="# Claims",
+      Pop="Population",
+      House="Households"
+    ) %>% 
+    tab_footnote(
+      footnote=md("*FEMA data*")
+    )
+
+    gtsave(paste0(Tempdir, "/Table.png")
+#####################   End of Make demographics table
+
+
+#####################   Make Map
+
+Bbox <- sf::st_bbox(FEMA_data)
+# Make a bounding box off-center to accomodate index map
+Bbox_X <- expand_box(Bbox, pct=0.2, offset=2)
+# Get state outline
+Inset_map <- tigris::states() %>% 
+  filter(STUSPS==state) %>% 
+  sf::st_transform(crs=googlecrs) %>% 
+  ggplot() +
+  geom_sf() +
+  geom_sf(data=sf::st_centroid(FEMA_data), color="red", size=3) +
+  theme(axis.text.x=element_blank(), 
+      axis.ticks.x=element_blank(), 
+      axis.text.y=element_blank(), 
+      axis.ticks.y=element_blank()) 
+
+basemap <- maptiles::get_tiles(Bbox_X, provider = "OpenStreetMap", crop = TRUE)
+Main_map <- ggplot() +
+  tidyterra::geom_spatraster_rgb(data = basemap) +
+  geom_sf(data = FEMA_data, color = "red", fill=NA, linewidth=1, linetype="dashed")
+
+Final_map <- cowplot::ggdraw() +
+  cowplot::draw_plot(Main_map) +
+  cowplot::draw_plot(Inset_map, x=0.75, y=0.2, width=0.2, height=0.2)
+
+ggsave(filename = "/Map.png", 
+       path = Tempdir,
+       plot = Final_map,
+       width = 7.05, 
+       # height = 4,
+       dpi = 150)
+
+#####################   End of Make Map
+
+#####################   Make plot of event vs number of claims
+
+foo <- FEMA_data %>% 
+  sf::st_drop_geometry() %>% 
+  select(floodEvents, floodNum) %>% 
+  mutate(floodEvents=stringr::str_split(floodEvents, ", "),
+         floodNum=stringr::str_split(floodNum, ", ")) %>% 
+  pivot_longer(everything(),
+               values_to = "Values",
+               # names_pattern = "Events|Num",
+               names_to = "Names") %>% 
+  unnest(Values) %>% 
+  group_by(Names) %>% 
+    mutate(id = row_number()) %>% 
+  ungroup() %>% 
+  pivot_wider(id_cols=id,
+              names_from = "Names",
+              values_from = "Values") %>% 
+  mutate(floodNum=as.numeric(floodNum)) %>% 
+  mutate(floodEvents = fct_inorder(floodEvents)) %>%
+  select(-id)
+
+Events <- foo %>% 
+  ggplot(aes(x=floodEvents, y=floodNum)) +
+  geom_col() +
+  coord_flip() +
+  labs(title=paste("Flooding Events in Block Group", My_blkgrp),
+       y="Number of Flood Claims",
+       x="Flood Name")
+
+
+
+#####################   End of Make plot of event vs number of claims
+
 
 params <- list()
 
