@@ -23,7 +23,7 @@ library(tidycensus)
 
 googlecrs <- "EPSG:4326"
 
-# path <- "/home/ajackson/Dropbox/Rprojects/ERD/FEMA/"
+Xpath <- "/home/ajackson/Dropbox/Rprojects/ERD/Data/"
 path <- "/home/ajackson/Dropbox/Rprojects/Curated_Data_Files/Census_data/Flood/"
 
 ```
@@ -64,7 +64,8 @@ get_ACS <- function(State, Year) {
            Fam=FamE, Fam_in_poverty=Fam_in_povertyE, Aggreg_inc=Aggreg_incE,
            Pct_poverty, Households=HouseholdsE, Renters=RentersE, 
            RentersH=RentersHE, Owners=OwnersE, OwnersH=OwnersHE, 
-           Mobile=MobileE, Med_ageE=Med_ageE)
+           Mobile=MobileE, Med_ageE=Med_ageE) %>% 
+    filter(!sf::st_is_empty(geometry)) 
   
   ACS <- sf::st_transform(ACS, googlecrs)  
   
@@ -73,7 +74,59 @@ get_ACS <- function(State, Year) {
 
 ```
 
-##    Loop through states and attach census data, then save output by state
+##    Read in and prepare crosswalk file for 2010 to 2020 census block groups
+
+```{r}
+
+Xwalk <- read_delim(paste0(Xpath, "tab20_blkgrp20_blkgrp10_natl.txt"),
+                    delim="|", col_types="cccnncccccnnccnn") #%>% 
+          select(GEOID_BLKGRP_20, GEOID_BLKGRP_10, AREALAND_PART,
+                 AREALAND_BLKGRP_20, AREALAND_BLKGRP_10)
+
+```
+
+
+```{r}
+
+ACS2 <- get_ACS("AL", 2020)
+
+tmap::tmap_options(basemaps="OpenStreetMap")
+
+tmap::tmap_mode("view") # set mode to interactive plots
+
+# tmap::tm_shape(All_stats %>% filter(str_starts(GEOID, "010030114072")) %>% 
+                                 # filter(Depth=="10")) + 
+  tmap::tm_shape(ACS2) +
+  tmap::tm_polygons(alpha=0.5,
+                    col="Pop_acs",
+                    palette = "Blues",
+                    colorNA=NULL,
+                    title = "Testing",
+                    popup.vars=c("GEOID",
+                                 "Pop_acs" )
+                    ) 
+
+ACS3 <- get_ACS("AL", 2019)
+
+tmap::tmap_options(basemaps="OpenStreetMap")
+
+tmap::tmap_mode("view") # set mode to interactive plots
+
+# tmap::tm_shape(All_stats %>% filter(str_starts(GEOID, "010030114072")) %>% 
+                                 # filter(Depth=="10")) + 
+  tmap::tm_shape(ACS3) +
+  tmap::tm_polygons(alpha=0.5,
+                    col="Pop_acs",
+                    palette = "Blues",
+                    colorNA=NULL,
+                    title = "Testing",
+                    popup.vars=c("GEOID",
+                                 "Pop_acs" )
+                    ) 
+```
+
+
+##    Loop through states and save output by state
 
 ```{r}
 
@@ -89,19 +142,22 @@ for (state in States) {
   
   print(paste("---->", state))
   #   First get block groups for 2020 census  
-  Census2020 <- as_tibble(get_ACS(state, 2020)) # hide geometry
-  Census2015 <- as_tibble(get_ACS(state, 2019))
+  Census2020 <- get_ACS(state, 2020) 
+  Census2010 <- get_ACS(state, 2019)
+  # Census2020 <- as_tibble(get_ACS(state, 2020)) 
+  # Census2010 <- as_tibble(get_ACS(state, 2019))
   
-  Unmatched <- anti_join(Census2015, Census2020, by="GEOID") # "lost" blk grps
-  
-  Total <- bind_rows(Census2020, Unmatched) %>% 
-    filter(!is.na(Pop_acs)) %>% 
-    filter(Pop_acs>50) %>% 
-    sf::st_sf(sf_column_name = "geometry") %>% 
-    sf::st_as_sf() %>% 
-    sf::st_make_valid()
-  
-  saveRDS(Total, paste0(path, "ACS_", state, ".rds"))
+  # Unmatched <- anti_join(Census2015, Census2020, by="GEOID") # "lost" blk grps
+  # 
+  # Total <- bind_rows(Census2020, Unmatched) %>% 
+  #   filter(!is.na(Pop_acs)) %>% 
+  #   filter(Pop_acs>50) %>% 
+  #   sf::st_sf(sf_column_name = "geometry") %>% 
+  #   sf::st_as_sf() %>% 
+  #   sf::st_make_valid()
+  # 
+  saveRDS(Census2010, paste0(path, "ACS_2010_", state, ".rds"))
+  saveRDS(Census2020, paste0(path, "ACS_2020_", state, ".rds"))
   
 }
 
