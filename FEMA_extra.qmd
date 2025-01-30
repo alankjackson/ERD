@@ -333,7 +333,6 @@ foo4 <- dePop(foo2[58,], 15)
 ##    Test out creating a pdf report
 
 ```{r}
-
 FEMA <- readRDS(paste0(path, "FEMA_extra_", "IA", ".rds"))
 My_blkgrp <- "190130026045"
 FEMA_data <- FEMA %>% filter(censusBlockGroupFips==My_blkgrp)
@@ -345,16 +344,13 @@ County <- tigris::list_counties(state) %>%
 City <- stringr::str_replace(FEMA_data$nfipCommunityName, "Unk", "")
 Tempdir <- tempdir()
 
-# block_groups <- tigris::block_groups("IA", county = NULL)
-# "https://www.google.com/maps/@?api=1&map_action=map&center=42.5399908708896%2C-92.4296092987061&zoom=13"
-
-Title <-paste("Report for Block Group", My_blkgrp, "in", City,
-              County, "county,", state)
-Intro <- paste0("Data from FEMA, as of 3 Jan 2025, claims since 1978\n
-                This block group has a poverty level of ",
-               FEMA_data$Pct_poverty, "%", "\n",
+Title <-paste("Report for Block Group", My_blkgrp, "\n# in", City,
+              County$county, "county,", state)
+Intro <- paste0("Data from FEMA, as of 3 Jan 2025, claims since 1978. ",
+                "This block group has a poverty level of ",
+               FEMA_data$Pct_poverty, "% ",
                "and a per capita income of ", scales::dollar(FEMA_data$Per_cap_in), ".\n\n",
-               "There have been ", FEMA_data$Num_dates, " flood events."
+               "There have been ", FEMA_data$Num_dates, " flood events since 1978."
                )  
 
 #####################   Make demographics table
@@ -382,7 +378,8 @@ Table <-
       footnote=md("*FEMA data*")
     )
 
-    gtsave(paste0(Tempdir, "/Table.png")
+    gtsave(Table, paste0(Tempdir, "/Table.png"))
+    table_png <- paste0(Tempdir, "/Table.png")
 #####################   End of Make demographics table
 
 
@@ -412,13 +409,14 @@ Final_map <- cowplot::ggdraw() +
   cowplot::draw_plot(Main_map) +
   cowplot::draw_plot(Inset_map, x=0.75, y=0.2, width=0.2, height=0.2)
 
-ggsave(filename = "/Map.png", 
+ggsave(filename = "/Final_map.png", 
        path = Tempdir,
        plot = Final_map,
        width = 7.05, 
        # height = 4,
        dpi = 150)
 
+map_png <- paste0(Tempdir,"/Final_map.png")
 #####################   End of Make Map
 
 #####################   Make plot of event vs number of claims
@@ -447,20 +445,47 @@ Events <- foo %>%
   ggplot(aes(x=floodEvents, y=floodNum)) +
   geom_col() +
   coord_flip() +
-  labs(title=paste("Flooding Events in Block Group", My_blkgrp),
+  labs(title=paste("Events in Blk Grp", My_blkgrp),
        y="Number of Flood Claims",
        x="Flood Name")
 
+ggsave(filename = "/Events.png", 
+       path = Tempdir,
+       plot = Events,
+       width = 7.05, 
+       # height = 4,
+       dpi = 150)
 
+events_png <- paste0(Tempdir,"/Events.png")
 
 #####################   End of Make plot of event vs number of claims
 
+#################### make report
 
-params <- list()
+tempReport <- c(
+  "# `r Title`",
+  " ",
+  "`r Intro`",
+  " ",
+  "`r comment`",
+  " ",
+  "![Map](`r map_png`)",
+  " ",
+  "![Demographics](`r table_png`)",
+  " ",
+  "![Flood History](`r events_png`)"
+)
 
-pdf <-  rmarkdown::render(tempReport, 
+fileConn<-file(paste0(Tempdir, "/tempReport.rmd"))
+writeLines(tempReport, fileConn)
+close(fileConn)
+
+# params <- list(Title=Title, Intro=Intro, comment=comment)
+
+options(tinytex.verbose = TRUE)
+pdf <-  rmarkdown::render(paste0(Tempdir, "/tempReport.rmd"), 
           output_file = "FEMA_flooding.pdf",
-          params = params,
+          # params = params,
           envir = new.env(parent = globalenv())
         )
 
