@@ -28,6 +28,7 @@ library(tidycensus)
 library(stringr)
 library(tmap)
 library(terra)
+library(sf)
 
 options(tigris_use_cache = TRUE)
 
@@ -106,7 +107,7 @@ Census polygons are NAD83, EPSG:4269
 
 ```{r}
 ## AL, CT, DC, DE, FL, GA, LA, MA, MD, ME, MS, NC, NH, NJ, NY, PA, RI, SC, TX, VA
-State <- "NC"
+State <- "AL"
 
 #     P16_002N  !!Total:!!Family households:
 #     P16_007N !!Total:!!Nonfamily households:
@@ -277,6 +278,34 @@ saveRDS(All_stats, paste0(path, "All_stats_", State,".rds"))
 ```{r}
 
 All_stats <- readRDS(paste0(path, "All_stats_", State,".rds"))
+
+tmap::tmap_options(basemaps="OpenStreetMap")
+
+tmap::tmap_mode("view") # set mode to interactive plots
+
+# tmap::tm_shape(All_stats %>% filter(str_starts(GEOID, "010030114072")) %>% 
+                                 # filter(Depth=="10")) + 
+  tmap::tm_shape(Blocks) +
+  tmap::tm_polygons(alpha=0.5,
+                    col="Pop_blk",
+                    palette = "Blues",
+                    colorNA=NULL,
+                    title = "10 feet sea level rise",
+                    popup.vars=c("GEOID",
+                                 "NAME",
+                                 "Pop_blk",
+                                 "Fam_house_blk")
+                    ) +
+  tmap::tm_shape(ACS) +
+  tmap::tm_polygons(alpha=0.5,
+                    col="PopE",
+                    palette = "Blues",
+                    colorNA=NULL,
+                    title = "10 feet sea level rise",
+                    popup.vars=c("GEOID",
+                                 "NAME",
+                                 "PopE" )
+                    ) 
 
 All_stats2 <- All_stats %>% 
   #   Fix little oopsie
