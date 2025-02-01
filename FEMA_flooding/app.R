@@ -19,7 +19,7 @@ DataLocation <- "https://www.ajackson.org/ERD/FEMA/"
 # Google_notes <- "https://docs.google.com/document???????????????????"
 
 #########    for testing locally
-Local_test <- FALSE
+Local_test <- TRUE
 
 
 if ( Local_test ) {
@@ -212,6 +212,18 @@ make_Pdf <- function(filename, input){
                     params = params,
                     envir = new.env(parent = globalenv())
   )
+}
+
+####    Expand a bounding box
+#   Expand box by 20% to give a little extra room
+expand_box <- function(bbox, pct=0.2){
+  Dx <- (bbox[["xmax"]]-bbox[["xmin"]])*pct
+  Dy <- (bbox[["ymax"]]-bbox[["ymin"]])*pct
+  bbox["xmin"] <- bbox["xmin"] - Dx
+  bbox["xmax"] <- bbox["xmax"] + Dx
+  bbox["ymin"] <- bbox["ymin"] - Dy
+  bbox["ymax"] <- bbox["ymax"] + Dy
+  return(bbox)
 }
 
 #######################################################
