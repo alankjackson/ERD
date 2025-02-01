@@ -74,17 +74,6 @@ get_ACS <- function(State, Year) {
 
 ```
 
-##    Read in and prepare crosswalk file for 2010 to 2020 census block groups
-
-```{r}
-
-Xwalk <- read_delim(paste0(Xpath, "tab20_blkgrp20_blkgrp10_natl.txt"),
-                    delim="|", col_types="cccnncccccnnccnn") #%>% 
-          select(GEOID_BLKGRP_20, GEOID_BLKGRP_10, AREALAND_PART,
-                 AREALAND_BLKGRP_20, AREALAND_BLKGRP_10)
-
-```
-
 
 ```{r}
 
