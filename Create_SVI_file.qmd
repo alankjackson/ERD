@@ -1,0 +1,22 @@
+---
+title: "Create SVI file"
+author: "Alan Jackson"
+format: html
+editor: source
+---
+
+##    Create Social Vulnerability Index (SVI) files
+
+The orange bastard has purged the CDC website of SVI data, so we have to 
+recreate it.
+
+
+```{r}
+
+library(tidyverse)
+library(findSVI)
+
+
+
+```
+
