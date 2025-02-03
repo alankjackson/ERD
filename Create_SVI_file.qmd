@@ -16,7 +16,32 @@ recreate it.
 library(tidyverse)
 library(findSVI)
 
+path <- "/home/ajackson/Dropbox/Rprojects/Curated_Data_Files/SocialVulnIndex/"
+
+```
+
+##    Walk through states slowly
+
+```{r}
+
+States <- c("NY", "AK", "AZ", "AR", "CA", "LA", "CO", "CT", "DE", "DC",
+"FL", "GA", "MO", "SC", "HI", "ID", "IL", "IN", "KY", "IA", "KS", "ME", "MD",
+"MA", "MI", "MN", "MS", "MT", "NE", "NV", "NH", "NJ", "NM", "NC", "ND", "OH",
+"OK", "OR", "PA", "TX", "RI", "SD", "TN", "UT", "VT", "VA", "WA", "WV", "WI",
+"WY", "PR")
+
+for (astate in States) {
+  print(astate)
+  result <- find_svi(year=2020,
+         state=astate,
+         geography="tract")
+  
+  saveRDS(result, paste0(path, "SVI_", astate, ".rds"))
+
+}
+
 
 
 ```
+
 
