@@ -415,7 +415,9 @@ ACS <- get_acs(geography="block group",
                state=State,
                county=Counties,
                output="wide",
-               geometry=TRUE) 
+               geometry=TRUE) %>% 
+  filter(!st_is_empty(geometry)) %>% 
+  st_transform(googlecrs)  
 
 ACS <- ACS %>% 
   mutate(Pct_poverty=100*Fam_in_povertyE/FamE) %>% 
