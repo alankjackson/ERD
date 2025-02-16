@@ -1,31 +1,28 @@
 #
-# This is a Shiny web application. You can run the application by clicking
-# the 'Run App' button above.
+#   Tool for searching the country for poor areas subject to frequent flooding
 #
-# Find out more about building applications with Shiny here:
-#
-#    https://shiny.posit.co/
 #
 
 library(tidyverse)
 library(stringr)
 library(leaflet)
+library(leafpop)
 library(shiny)
-library(bslib)
+library(bslib) # for page layout
 
-path <- "/home/ajackson/Dropbox/Rprojects/ERD/FEMA/"
+path <- "/home/ajackson/Dropbox/Rprojects/ERD/Data/Final_FEMA_Flood_Data/"
 DataLocation <- "https://www.ajackson.org/ERD/FEMA/"
 
 # Google_notes <- "https://docs.google.com/document???????????????????"
 
 #########    for testing locally
-Local_test <- TRUE
+Local_test <- FALSE
 
 
 if ( Local_test ) {
-  df_grp <- readRDS(paste0(path, "FEMA_extra_AL.rds")) 
+  df_grp <- readRDS(paste0(path, "FEMA_AL_plot.rds")) 
 } else {
-  z <- url(paste0(DataLocation, "FEMA_extra_AL.rds"), method="libcurl")
+  z <- url(paste0(DataLocation, "FEMA_AL_plot.rds"), method="libcurl")
   df_grp <- readRDS(z)
   close(z)
 }
@@ -36,8 +33,8 @@ State_df <- rename(State_df, c(States=state.name, State_abbr=state.abb))
 #   Round up to the nearest 5
 print("max poverty")
 Max_poverty <- 5*round((max(df_grp$Pct_poverty, na.rm=TRUE)+2.5)/5)
-Max_claims <- 25*round((max(df_grp$Num_Claims, na.rm=TRUE)+12.5)/25)
-Max_house <- 0.1*round((max(df_grp$ClaimsPerHousehold, na.rm=TRUE)+0.05)/0.1)
+# Max_claims <- 25*round((max(df_grp$Num_Claims_Primary, na.rm=TRUE)+12.5)/25)
+# Max_house <- 0.1*round((max(df_grp$ClaimsPerHousehold, na.rm=TRUE)+0.05)/0.1)
 print(paste("Max poverty", Max_poverty))
 
 Row_diff <- NULL  # Row deselected from table
@@ -57,14 +54,14 @@ shinyjs.browseURL = function(url) {
 
 read_State <- function(State) {
   i <- which(State_df$States==State)
-  print(paste0("Read in ", "FEMA_extra_",State_df[i,]$State_abbr,".rds"))
+  print(paste0("Read in ", "FEMA_",State_df[i,]$State_abbr,"_plot.rds"))
   if ( Local_test ) {
     #     Read block-group data off disk
     foo <- readRDS(paste0(path,
-                          paste0("FEMA_extra_", State_df[i,]$State_abbr,".rds")))
+                          paste0("FEMA_", State_df[i,]$State_abbr,"_plot.rds")))
   } else {
-    z <- url(paste0(DataLocation, "FEMA_extra_", 
-                    State_df[i,]$State_abbr,".rds"), 
+    z <- url(paste0(DataLocation, "FEMA_", 
+                    State_df[i,]$State_abbr,"_plot.rds"), 
              method="libcurl")
     foo <- readRDS(z)
     close(z)
@@ -77,7 +74,7 @@ read_State <- function(State) {
 Draw_blkgrp <- function(dataset, Grp_data, pal, input){
   print("---- draw groups")#
   print(input$Block_var)
-  Events <- str_replace_all(Grp_data$floodEvent, ", ", "<br>")
+  Events <- str_replace_all(Grp_data$floodEvents, ", ", "<br>")
   leafletProxy("map", data=dataset) %>% 
     clearShapes() %>%
     clearControls() %>%
@@ -89,17 +86,21 @@ Draw_blkgrp <- function(dataset, Grp_data, pal, input){
       weight = 1,
       fillOpacity = 0.4,
       fillColor = pal(Grp_data[[input$Block_var]]),
+      options = pathOptions(pane = "Polys"),
       popup = paste(
         "<div class='leaflet-popup-scrolled' style='max-width:150px;max-height:200px'>",
         "Block Group:", Grp_data$censusBlockGroupFips, "<br>",
         "Pop at risk:", Grp_data$Pop_acs, "<br>",
         "Homes at risk:", Grp_data$Households, "<br>",
-        "Own, Rent, Mobile:<br>",    Grp_data$Num_Claims_Own,",",
-                                     Grp_data$Num_Claims_Rent,",",
-                                     Grp_data$Num_Claims_Mobile,"<br>",
+        "<table> <tr>",
+        "<th>Own</th> <th>Rent</th> <th>Mobile</th> </tr><tr>",   
+        "<td>",Grp_data$Num_Claims_Own_Primary,"</td>",
+        "<td>",Grp_data$Num_Claims_Rent_Primary,"</td>",
+        "<td>",Grp_data$Num_Claims_Mobile_Primary,"</td></tr></table>",
         "Claims per house:", Grp_data$ClaimsPerHousehold, "<br>",
-        "Number of Floods:", Grp_data$Num_dates, "<br>",
+        "Number of Floods:", Grp_data$Num_dates_Primary, "<br>",
         "% in poverty:", Grp_data$Pct_poverty, "<br>",
+        "Vuln Index:", Grp_data$Vuln_Index, "<br>",
         "<b>Flood events:</b><br>", Events, "</div>"
       )
     ) %>% 
@@ -113,47 +114,95 @@ Draw_blkgrp <- function(dataset, Grp_data, pal, input){
 
 ####  Draw dots
 
-Draw_dots <- function(dataset) {
+Draw_dots <- function(dataset, drawme) {
+  print(paste("-- Draw_dots", drawme))
   centroids <- sf::st_centroid(dataset)
-  leafletProxy("map", data=centroids) %>% 
-    clearMarkers() %>%
+  print("-- Draw_dots 2")
+  p2 <- as.list(NULL)
+  p2 <- lapply(1:nrow(dataset), function(i) {
+    p2[[i]] <- dataset[i,]$Plot
+  })
+  print("-- Draw_dots 3")
+  foo <- leafletProxy("map", data=centroids) %>% 
+    clearMarkers() #%>%
+  print("-- Draw_dots 3.1")
+  foo <- foo %>% 
     addCircleMarkers(
+      group = paste0("pnt", drawme),
+      options = pathOptions(pane = "Dots"),
       radius=1,
       color="black"
-    )
+    ) #%>% 
+  print("-- Draw_dots 3.2")
+  foo <- foo %>% 
+    addPopupGraphs(p2, group = paste0("pnt", drawme))
+  print("-- Draw_dots 4")
+  foo
 }
+
+### Popup based on the dot clicked
+# makePopupPlot <- function (BlkGrp, dataset) {
+#   plot <- dataset %>% 
+#     sf::st_drop_geometry() %>% 
+#     filter(censusBlockGroupFips==BlkGrp) %>% 
+#     select(floodEvents, floodNum) %>% 
+#     mutate(floodEvents=stringr::str_split(floodEvents, ", "),
+#            floodNum=stringr::str_split(floodNum, ", ")) %>% 
+#     pivot_longer(everything(),
+#                  values_to = "Values",
+#                  names_to = "Names") %>% 
+#     unnest(Values) %>% 
+#     group_by(Names) %>% 
+#     mutate(id = row_number()) %>% 
+#     ungroup() %>% 
+#     pivot_wider(id_cols=id,
+#                 names_from = "Names",
+#                 values_from = "Values") %>% 
+#     mutate(floodNum=as.numeric(floodNum)) %>% 
+#     mutate(floodEvents = fct_inorder(floodEvents)) %>%
+#     select(-id) %>% 
+#     ggplot(aes(x=floodEvents, y=floodNum)) +
+#     geom_col() +
+#     coord_flip() +
+#     labs(title=paste("Events in Blk Grp"),
+#          y="Number of Flood Claims",
+#          x="Flood Name")
+#   
+#   return(plot)
+# }
 
 ####    Draw histograms
 
-Draw_plots <- function(Grp_data, output) {
-  p1 <- Grp_data %>% 
-    sf::st_drop_geometry() %>% 
-    filter(Num_Claims>100) %>% 
-    ggplot(aes(x=Num_Claims)) +
-    geom_histogram() +
-    labs(title="# of Claims/Blk-Grp",
-         x="# of Claims",
-         y="Blk Grps")
-  
-  p2 <- Grp_data %>% 
-    sf::st_drop_geometry() %>% 
-    filter(ClaimsPerHousehold>0.2) %>% 
-    ggplot(aes(x=ClaimsPerHousehold)) +
-    geom_histogram() +
-    labs(title="# of Claims/Household",
-         x="# of Claims/Household",
-         y="Blk Grps")
-  
-  output$plot <- renderPlot({
-    gridExtra::grid.arrange(p1, p2, 
-                            top = grid::textGrob(
-                              "Claims>100, Claims/House>0.2",
-                              # gp = gpar(fontfamily = "HersheySerif" , fontsize = 9),
-                              gp = grid::gpar(fontsize = 10)
-                            ))
-                            # top="Claims>100, Claims/House>0.2")
-  })
-}
+# Draw_plots <- function(Grp_data, output) {
+#   print("draw plots")
+#   p1 <- Grp_data %>% 
+#     sf::st_drop_geometry() %>% 
+#     filter(Num_Claims_Primary>100) %>% 
+#     ggplot(aes(x=Num_Claims_Primary)) +
+#     geom_histogram() +
+#     labs(title="# of Claims/Blk-Grp",
+#          x="# of Primary Claims",
+#          y="Blk Grps")
+#   
+#   p2 <- Grp_data %>% 
+#     sf::st_drop_geometry() %>% 
+#     filter(ClaimsPerHousehold>0.2) %>% 
+#     ggplot(aes(x=ClaimsPerHousehold)) +
+#     geom_histogram() +
+#     labs(title="# of Claims/House",
+#          x="# of Primary Claims/House",
+#          y="Blk Grps")
+#   
+#   output$plot <- renderPlot({
+#     gridExtra::grid.arrange(p1, p2, 
+#                             top = grid::textGrob(
+#                               "Claims>100, Claims/House>0.2",
+#                               # gp = gpar(fontfamily = "HersheySerif" , fontsize = 9),
+#                               gp = grid::gpar(fontsize = 10)
+#                             ))
+#                             # top="Claims>100, Claims/House>0.2")
+#   })
+# }
 
 ####    Create URL for google map
 
@@ -229,14 +278,14 @@ expand_box <- function(bbox, pct=0.2){
 #######################################################
 # UI 
 #######################################################
-# ui <- fluidPage(
-ui <- page_fluid(
+ui <- fluidPage(
+# ui <- page_fluid(
   
   # set up shiny js to be able to call our browseURL function
   shinyjs::useShinyjs(),
   shinyjs::extendShinyjs(text = js_code, functions = 'browseURL'),
   
-  #   Update fonts
+  #   Update fonts (shrink to gain more space)
   tags$style(type='text/css', ".selectize-input { 
              font-size: 12px; line-height: 12px;} 
              .selectize-dropdown { 
@@ -253,37 +302,28 @@ ui <- page_fluid(
     titlePanel("FEMA flooding data"),
 
     # Sidebar with a slider input for number of bins 
-    # sidebarLayout(
-    layout_columns(
-      card(# left top card
-        # sidebarPanel(
-          selectInput('State', 'Choose a state', state.name, selected="Alabama"),
-          
-          # HTML("<hr>"),
+    sidebarLayout(
+    # layout_columns(
+      # card(# left top card
+        sidebarPanel(
+        #   Alaska has no block groups that qualify
+          selectInput('State', 'Choose a state', state.name[-2], selected="Alabama"),
           
           sliderInput('Pct_poverty', '> % in Poverty', 
-                      min=5, max=Max_poverty,
-                      value=10, 
+                      min=25, max=Max_poverty,
+                      value=25, 
                       step=5, round=0),
           
-          # HTML("<br>"),
-          
-          sliderInput('Min_Claims', 'Number of Claims', 
-                      min=25, max=Max_claims,
-                      value=50, 
-                      step=25, round=0),
-          
-          # HTML("<br>"),
-          
-          sliderInput('Min_house', 'Claims per Household', 
-                      min=0, max=Max_house,
-                      value=0.1, 
-                      step=0.1, round=1),
+          # sliderInput('Min_house', 'Claims per Household', 
+          #             min=0, max=Max_house,
+          #             value=0.1, 
+          #             step=0.1, round=1),
           
           #   choose variable to color blocks with
           radioButtons("Block_var", "Color Blocks by:",
                        c("% Poverty"="Pct_poverty",
-                         "Num of Claims"="Num_Claims",
+                         "Vulnerability"="Vuln_Index",
+                         "Num of Claims"="Num_Claims_Primary",
                          "Claims per House"="ClaimsPerHousehold")),
           
           ####    Google and FEMA buttons
@@ -308,27 +348,15 @@ ui <- page_fluid(
           div(id="dwnbutton", 
             downloadButton("pdfButton", "Download PDF")
           )
-          
-        # )
       ),
-
-      card(
-        # Show a map
-        # mainPanel(
-           leafletOutput("map")
-        # )
-      ),
-    col_widths = c(3,9)
-    ),
-    layout_columns(
-      card(
-           plotOutput("plot")
-           ),
-      card(
-        DT::dataTableOutput('data')
-           ),
-      col_widths = c(3,9)
+  mainPanel(
+    # tabsetPanel(type = "tabs", id="inTabset",
+    tabsetPanel(id="inTabset",
+                tabPanel("Map", value="map", leafletOutput("map")),
+                tabPanel("Table", value="table", DT::dataTableOutput("data"))
+      )
     )
+  )
 )
 
 #######################################################
@@ -358,7 +386,9 @@ server <- function(input, output, session) {
       print("--5--")
       leaflet() %>% addTiles() %>%
         fitBounds(Bbox[["xmin"]], Bbox[["ymin"]],
-                  Bbox[["xmax"]], Bbox[["ymax"]])
+                  Bbox[["xmax"]], Bbox[["ymax"]]) %>% 
+        addMapPane("Polys", zIndex = 410) %>% # shown below Dots               
+        addMapPane("Dots", zIndex = 420) # shown above Polys               
     })
   })
 
@@ -369,22 +399,22 @@ server <- function(input, output, session) {
   dataset_grp <- reactive({
     # print(paste("--1--", input$Pct_poverty))
     foo <- df_grp() %>% 
-      filter(Pct_poverty>=input$Pct_poverty) %>% 
-      filter(ClaimsPerHousehold>=input$Min_house) %>% 
-      filter(Num_Claims>=input$Min_Claims)
+      filter(Pct_poverty>=input$Pct_poverty)# %>% 
+      # filter(ClaimsPerHousehold>=input$Min_house)# %>% 
+      # filter(Num_Claims_Primary>=input$Min_Claims)
     print(paste("--1.1--", nrow(foo)))
     updateSliderInput(session, "Pct_poverty", 
-                      min = 5,
+                      min = 25,
                       max = max(5*round((max(foo$Pct_poverty, na.rm=TRUE)+2.5)/5),15),
                       step = 5)
-    updateSliderInput(session, "Min_claims", 
-                      min = 25,
-                      max = max(25*round((max(foo$Num_Claims, na.rm=TRUE)+12.5)/25),25),
-                      step = 25)
-    updateSliderInput(session, "Min_house", 
-                      min = 0,
-                      max = max(0.1*round((max(foo$ClaimsPerHousehold, na.rm=TRUE)+0.05)/0.1),0),
-                      step = 0.1)
+    # updateSliderInput(session, "Min_claims", 
+    #                   min = 0,
+    #                   max = max(25*round((max(foo$Num_Claims_Primary, na.rm=TRUE)+12.5)/25),25),
+    #                   step = 25)
+    # updateSliderInput(session, "Min_house", 
+    #                   min = 0,
+    #                   max = max(0.1*round((max(foo$ClaimsPerHousehold, na.rm=TRUE)+0.05)/0.1),0),
+    #                   step = 0.1)
     foo
   })
   
@@ -403,6 +433,8 @@ server <- function(input, output, session) {
   
   observe({
     print("--6--")
+    #   leafpop wants group to change on redraw
+    # drawme <- stringr::str_remove_all(now(), "-|:|\\s|\\.")
     print(paste(input$Block_var, max(Grp_data()[[input$Block_var]])))
     #   Reset color scale
     if (nrow(Grp_data())==0) {return()}
@@ -412,8 +444,18 @@ server <- function(input, output, session) {
                           max(Grp_data()[[input$Block_var]], na.rm=TRUE)),
                         na.color = "transparent")
     Draw_blkgrp(dataset_grp(), Grp_data(), pal, input)
-    Draw_dots(dataset_grp())
-    Draw_plots(df_grp(), output)
+    # Draw_dots(dataset_grp(), drawme)
+    # Draw_plots(df_grp(), output)
+  })
+  
+  observe({
+    print("--6.5--")
+    #   leafpop wants group to change on redraw
+    drawme <- stringr::str_remove_all(now(), "-|:|\\s|\\.")
+    if (nrow(Grp_data())==0) {return()}
+    
+    Draw_dots(dataset_grp(), drawme)
+    # Draw_plots(df_grp(), output)
   })
 
   #####################
@@ -457,16 +499,29 @@ server <- function(input, output, session) {
   })
 
   #####################
+  #   Select Block Group center with mouse
+  #####################
+  
+  Select_grp2 <- observe({ #    Select a group with mouse
+    print("Reactive select group2")
+    event <- input$map_marker_click
+    print(paste("Blk_grp:", event$id))
+    print(paste("proxy event"))
+    req(event$id)
+    event$id
+  })
+
+  #####################
   #   Generate & Download PDF
   #####################
   
   observeEvent(Sel(), {
     if (Sel()) {
-      enable("pdfButton")
+      shinyjs::enable("pdfButton")
       shinyjs::runjs("$('#dwnbutton').removeAttr('title');")
     } else {
-      disable("pdfButton")
-      runjs("$('#dwnbutton').attr('title', 'Select a Block Group');") 
+      shinyjs::disable("pdfButton")
+      shinyjs::runjs("$('#dwnbutton').attr('title', 'Select a Block Group');") 
     }
   })
   
@@ -485,13 +540,14 @@ server <- function(input, output, session) {
     print("--10--")
     dataset_grp() %>% sf::st_drop_geometry()} %>%
       select(censusBlockGroupFips, Pop_acs, ClaimsPerHousehold, Pct_poverty,
-             Num_Claims_Own, Num_Claims_Rent),
-    colnames=c("Block Grp", 
+             Vuln_Index, Num_Claims_Own_Primary, Num_dates_Primary),
+    colnames=c("Blk Grp", 
                "Pop", 
-               "Claims House", 
-               "% Poverty", 
-               "Owner Claims",
-               "Renter Claims"),
+               "Clms Hse", 
+               "% Pov", 
+               "Vuln",
+               "Own Clms",
+               "# Evnt"),
     selection = 'single'
 )
   
@@ -526,6 +582,7 @@ observeEvent(Row_list$rows, ignoreNULL = FALSE, {
   if (Sel()) { # at least one row is selected
     LongLat <- sf::st_coordinates(sf::st_centroid(dataset_grp()[Row_added,]))
     Zoom <- make_Zoom(dataset_grp()[Row_added,])
+    updateTabsetPanel(session, "inTabset", selected="map") # switch to map tab
     leafletProxy("map") %>%
       addPolylines(data=dataset_grp()[Row_added,],
                    color="red",
