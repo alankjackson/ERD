@@ -8,10 +8,13 @@ library(stringr)
 library(leaflet)
 library(leafpop)
 library(shiny)
-library(bslib) # for page layout
+library(gt)
+# library(bslib) # for page layout
 
 path <- "/home/ajackson/Dropbox/Rprojects/ERD/Data/Final_FEMA_Flood_Data/"
 DataLocation <- "https://www.ajackson.org/ERD/FEMA/"
+
+googlecrs <- "EPSG:4326"
 
 # Google_notes <- "https://docs.google.com/document???????????????????"
 
@@ -244,33 +247,257 @@ find_Row <- function(Blk_grp, Grp_data){
   grep(Blk_grp, Grp_data$censusBlockGroupFips)
 }
 
+###############################################################
 ####    Build PDF report
+###############################################################
 
-make_Pdf <- function(filename, input){
-  # pdf(file = filename)
-  # plot(cars)
-  # dev.off()  
+make_Pdf <- function(filename, Blk_grp, dataset_grp, input){
+  print("----  make_Pdf")
+  FEMA_data <- dataset_grp %>% filter(censusBlockGroupFips==Blk_grp)
+  print("make Pdf: 2")
+  County_code <- stringr::str_sub(FEMA_data$censusBlockGroupFips, start=3, end=5)
+  state <- FEMA_data$State
+  comment <-  input$pdflabel
+  # comment <- "This is my comment about this data"
+  County <- tigris::list_counties(state) %>% 
+    filter(county_code==County_code)
+  # City <- stringr::str_replace(FEMA_data$nfipCommunityName, "Unk", "")
+  Tempdir <- tempdir()
+  
+  Title <-paste("Report for Block Group", Blk_grp, "\n# in", 
+                County$county, "county,", state)
+  Intro <- paste0("Data from FEMA, as of 3 Jan 2025, claims since 1978. ",
+                  "This block group has a poverty level of ",
+                  FEMA_data$Pct_poverty, "% ",
+                  "and a per capita income of ", scales::dollar(FEMA_data$Per_cap_in), ".\n\n",
+                  "There have been ", FEMA_data$Num_dates_Primary, " flood events since 1978."
+  )  
+  
+  #####################   Make claims table
+  Table <-
+    FEMA_data %>% sf::st_drop_geometry() %>% 
+    select(Claims_Owner=Num_Claims_Own_Primary, 
+           Claims_Renter=Num_Claims_Rent_Primary,
+           Claims_Total=Num_Claims_Primary, Pop_Owner=Owners,
+           Pop_Renter=Renters, Pop_Total=Pop_acs, House_Owner=OwnersH,
+           Claims_Vacation=Num_Claims_Vacation,
+           Claims_Mobile=Num_Claims_Mobile_Primary, Pop_Mobile=Mobile,
+           House_Renter=RentersH, House_Total=Households) %>% 
+    pivot_longer(everything(),
+                 values_to="Values",
+                 names_sep="_",
+                 names_to=c("Category", "Subset")) %>% 
+    pivot_wider(names_from=Category,
+                values_from = Values) %>% 
+    mutate(charOrdered = fct_relevel(Subset, c('Owner', 'Renter', 
+                                               'Mobile', 'Vacation', 
+                                               'Total'))) %>% 
+    arrange(charOrdered) %>%
+    select(-charOrdered) %>% 
+    gt() %>% 
+    tab_header(title="Claims Data") %>% 
+    cols_label(
+      Subset="Status",
+      Claims="# Claims",
+      Pop="Population",
+      House="Households"
+    ) %>% 
+    tab_style(
+      style = list(cell_fill(color = "lightblue")),
+      locations = cells_body(columns = everything(), rows = 5)
+    ) %>% 
+    tab_footnote(
+      footnote=md("*FEMA data*")
+    )
+  
+  gtsave(Table, paste0(Tempdir, "/Table.png"))
+  table_png <- paste0(Tempdir, "/Table.png")
+  #####################   End of Make claims table
+  
+  #####################   Make vulnerability table
+  Table2 <-
+    FEMA_data %>% sf::st_drop_geometry() %>% 
+    select(Socio_Econ, Ethnicity, Housing, Household_Ages, Vuln_Index, 
+           Per_cap_in, Med_ageE
+           ) %>% 
+    gt() %>% 
+    tab_header(title="Vulnerability Data") %>% 
+    cols_label(
+      Socio_Econ="Socio-Economic",
+      Ethnicity="Ethnicity",
+      Housing="Housing",
+      Household_Ages="Age",
+      Vuln_Index="Overall Index",
+      Per_cap_in="Per capita income",
+      Med_ageE="Median age"
+    ) %>% 
+    tab_spanner(
+      label="Vulnerability Indicies",
+      columns=c(Socio_Econ, Ethnicity, Housing, Household_Ages, Vuln_Index)
+    ) %>% 
+    fmt_currency(
+      columns=c(6)
+    ) %>% 
+    tab_footnote(
+      footnote=md("*Census and CDC data*")
+    )
+  
+  gtsave(Table2, paste0(Tempdir, "/Table2.png"))
+  table2_png <- paste0(Tempdir, "/Table2.png")
+  #####################   End of Make vulnerability table
+  
+  #####################   Make Map
+  
+  Bbox <- sf::st_bbox(FEMA_data)
+  # Make a bounding box off-center to accomodate index map
+  Bbox_X <- expand_box(Bbox, pct=0.2, offset=2)
+  # Get state outline
+  Inset_map <- tigris::states() %>% 
+    filter(STUSPS==state) %>% 
+    sf::st_transform(crs=googlecrs) %>% 
+    ggplot() +
+    geom_sf() +
+    geom_sf(data=sf::st_centroid(FEMA_data), color="red", size=3) +
+    theme(axis.text.x=element_blank(), 
+          axis.ticks.x=element_blank(), 
+          axis.text.y=element_blank(), 
+          axis.ticks.y=element_blank()) 
+  
+  basemap <- maptiles::get_tiles(Bbox_X, provider = "OpenStreetMap", crop = TRUE)
+  Main_map <- ggplot() +
+    tidyterra::geom_spatraster_rgb(data = basemap) +
+    geom_sf(data = FEMA_data, color = "red", fill=NA, linewidth=1, linetype="dashed")
+  
+  Final_map <- cowplot::ggdraw() +
+    cowplot::draw_plot(Main_map) +
+    cowplot::draw_plot(Inset_map, x=0.75, y=0.2, width=0.2, height=0.2)
+  
+  ggsave(filename = "/Final_map.png", 
+         path = Tempdir,
+         plot = Final_map,
+         width = 7.05, 
+         # height = 4,
+         dpi = 150)
+  
+  map_png <- paste0(Tempdir,"/Final_map.png")
+  #####################   End of Make Map
+  
+  #####################   Make plot of event vs number of claims
+  
+  foo <- FEMA_data %>% 
+    sf::st_drop_geometry() %>% 
+    select(floodEvents, floodNum) %>% 
+    mutate(floodEvents=stringr::str_split(floodEvents, ", "),
+           floodNum=stringr::str_split(floodNum, ", ")) %>% 
+    pivot_longer(everything(),
+                 values_to = "Values",
+                 # names_pattern = "Events|Num",
+                 names_to = "Names") %>% 
+    unnest(Values) %>% 
+    group_by(Names) %>% 
+    mutate(id = row_number()) %>% 
+    ungroup() %>% 
+    pivot_wider(id_cols=id,
+                names_from = "Names",
+                values_from = "Values") %>% 
+    mutate(floodNum=as.numeric(floodNum)) %>% 
+    mutate(floodEvents = fct_inorder(floodEvents)) %>%
+    select(-id)
+  
+  Events <- foo %>% 
+    ggplot(aes(x=floodEvents, y=floodNum)) +
+    geom_col() +
+    coord_flip() +
+    labs(title=paste("Events in Blk Grp", Blk_grp),
+         y="Number of Flood Claims",
+         x="Flood Name")
+  
+  ggsave(filename = "/Events.png", 
+         path = Tempdir,
+         plot = Events,
+         width = 7.05, 
+         # height = 4,
+         dpi = 150)
+  
+  events_png <- paste0(Tempdir,"/Events.png")
+  
+  #####################   End of Make plot of event vs number of claims
+  
+  #################### make report
+  
+  tempReport <- c(
+    "---",
+    'title: "FEMA Flood Insurance History report"',
+    "output: pdf_document",
+    "format: pdf",
+    "params:",
+    "  Title: NA",
+    "  Intro: NA",
+    "  comment: NA",
+    "  map_png: NA",
+    "  table_png: NA",
+    "  table2_png: NA",
+    "  events_png: NA",
+    "---",
+    "# `r params$Title`",
+    " ",
+    "`r params$Intro`",
+    " ",
+    "`r params$comment`",
+    " ",
+    "![Map](`r params$map_png`)",
+    " ",
+    "![Claims](`r params$table_png`)",
+    " ",
+    "![Vulnerability](`r params$table2_png`)",
+    " ",
+    "![Flood History](`r params$events_png`)"
+  )
+  
   
   # Set up parameters to pass to Rmd document
-  params <- list(n = input$slider)
+  # params <- list(n = input$slider)
+  Params <- list(Title=Title, Intro=Intro, comment=comment,
+                 map_png=map_png, table_png=table_png, table2_png=table2_png, 
+                 events_png=events_png)
   
   # Knit the document, passing in the `params` list, and eval it in a
   # child of the global environment (this isolates the code in the document
   # from the code in this app).
-  rmarkdown::render(tempReport, output_file = filename,
-                    params = params,
-                    envir = new.env(parent = globalenv())
+  # rmarkdown::render(tempReport, output_file = filename
+                    # params = params,
+                    # envir = new.env(parent = globalenv())
+  # )
+  fileConn<-file(paste0(Tempdir, "/tempReport.rmd"))
+  writeLines(tempReport, fileConn)
+  close(fileConn)
+  
+  # params <- list(Title=Title, Intro=Intro, comment=comment)
+  
+  options(tinytex.verbose = TRUE)
+  my_pdf <-  rmarkdown::render(paste0(Tempdir, "/tempReport.rmd"), 
+                            # output_file = "FEMA_flooding.pdf",
+                            output_file = filename,
+                            # output_dir = Tempdir,
+                            # envir = parent.frame()
+                            params = Params,
+                            envir = new.env(parent = globalenv())
   )
+  # my_pdf
 }
+
+###############################################################
+#           end build pdf report
+###############################################################
 
 ####    Expand a bounding box
 #   Expand box by 20% to give a little extra room
-expand_box <- function(bbox, pct=0.2){
+expand_box <- function(bbox, pct=0.2, offset=1){
   Dx <- (bbox[["xmax"]]-bbox[["xmin"]])*pct
   Dy <- (bbox[["ymax"]]-bbox[["ymin"]])*pct
   bbox["xmin"] <- bbox["xmin"] - Dx
-  bbox["xmax"] <- bbox["xmax"] + Dx
-  bbox["ymin"] <- bbox["ymin"] - Dy
+  bbox["xmax"] <- bbox["xmax"] + Dx*offset
+  bbox["ymin"] <- bbox["ymin"] - Dy*offset
   bbox["ymax"] <- bbox["ymax"] + Dy
   return(bbox)
 }
@@ -301,10 +528,8 @@ ui <- fluidPage(
     # Application title
     titlePanel("FEMA flooding data"),
 
-    # Sidebar with a slider input for number of bins 
     sidebarLayout(
     # layout_columns(
-      # card(# left top card
         sidebarPanel(
         #   Alaska has no block groups that qualify
           selectInput('State', 'Choose a state', state.name[-2], selected="Alabama"),
@@ -314,11 +539,6 @@ ui <- fluidPage(
                       value=25, 
                       step=5, round=0),
           
-          # sliderInput('Min_house', 'Claims per Household', 
-          #             min=0, max=Max_house,
-          #             value=0.1, 
-          #             step=0.1, round=1),
-          
           #   choose variable to color blocks with
           radioButtons("Block_var", "Color Blocks by:",
                        c("% Poverty"="Pct_poverty",
@@ -327,27 +547,24 @@ ui <- fluidPage(
                          "Claims per House"="ClaimsPerHousehold")),
           
           ####    Google and FEMA buttons
-          # HTML("<hr>"),
           splitLayout(cellWidths = c("50%", "50%"),
           column(1,
           actionButton(
             "Google",
             "Google"
-            # width="50%"
           )),
           column(6,
           actionButton(
             "FEMA",
             "FEMA"
-            # width="50%"
           ))),
           
           #####   Download PDF
           
           textInput("pdflabel", "Label for the PDF", "---"),
-          div(id="dwnbutton", 
-            downloadButton("pdfButton", "Download PDF")
-          )
+          # div(id="dwnbutton", 
+            downloadButton("FEMA_flooding", "Download PDF")
+          # )
       ),
   mainPanel(
     # tabsetPanel(type = "tabs", id="inTabset",
@@ -363,6 +580,10 @@ ui <- fluidPage(
 # server 
 #######################################################
 server <- function(input, output, session) {
+  
+  #   Set reactive value for storing chosen block group
+  
+  Blk_grp <- reactiveVal()
 
   ##################################
   #####   Load in a new state
@@ -495,6 +716,7 @@ server <- function(input, output, session) {
     print(paste("proxy event"))
     req(event$id)
     proxy %>% DT::selectRows(as.numeric(find_Row(event$id, Grp_data())))
+    Blk_grp(event$id) # store selected block group
     event$id
   })
 
@@ -515,21 +737,49 @@ server <- function(input, output, session) {
   #   Generate & Download PDF
   #####################
   
-  observeEvent(Sel(), {
-    if (Sel()) {
-      shinyjs::enable("pdfButton")
-      shinyjs::runjs("$('#dwnbutton').removeAttr('title');")
-    } else {
-      shinyjs::disable("pdfButton")
-      shinyjs::runjs("$('#dwnbutton').attr('title', 'Select a Block Group');") 
-    }
-  })
+  # observeEvent(Sel(), {
+  #   if (Sel()) {
+  #     shinyjs::enable("pdfButton")
+  #     shinyjs::runjs("$('#dwnbutton').removeAttr('title');")
+  #   } else {
+  #     shinyjs::disable("pdfButton")
+  #     shinyjs::runjs("$('#dwnbutton').attr('title', 'Select a Block Group');") 
+  #   }
+  # })
   
-  output$pdfButton <- downloadHandler("FEMA_flooding.pdf", function(theFile) {
-    # Here, your pdf-generator is provided with the "filename" that is used
-    # to provide the file for the user.
-      make_Pdf(theFile, input)
-  })
+  # output$pdfButton <- downloadHandler("FEMA_flooding.pdf", function(theFile) {
+  #   # Here, your pdf-generator is provided with the "filename" that is used
+  #   # to provide the file for the user.
+  #   print(paste("-------  Blk_grp()", Blk_grp()))
+  #   if (length(Blk_grp())==0) {
+  #     showNotification("Select a Block Group first")
+  #     print("Return")
+  #     return()
+  #   }
+  #     make_Pdf(theFile, Blk_grp(), dataset_grp(), input)
+  # })
+  output$FEMA_flooding <- downloadHandler(
+    filename = "FEMA_flooding.pdf",
+    # filename = file.path(tempdir(), "FEMA_flooding.pdf"),
+    # print(paste("-------  Blk_grp()", Blk_grp())) 
+    # if (length(Blk_grp())==0) {
+    #   showNotification("Select a Block Group first")
+    #   print("Return")
+    #   return()
+    # }
+    content = function(file) {
+      # tempReport <- file.path(tempdir(), "report.Rmd")
+      # file.copy("report.Rmd", tempReport, overwrite = TRUE)
+      
+      # params <- list(n = input$slider)
+      
+      make_Pdf(file, Blk_grp(), dataset_grp(), input)
+      # rmarkdown::render(tempReport, output_file = file,
+      #                   params = params,
+      #                   envir = new.env(parent = globalenv())
+      # )
+    }
+  )
   
   
   #####################
@@ -583,6 +833,8 @@ observeEvent(Row_list$rows, ignoreNULL = FALSE, {
     LongLat <- sf::st_coordinates(sf::st_centroid(dataset_grp()[Row_added,]))
     Zoom <- make_Zoom(dataset_grp()[Row_added,])
     updateTabsetPanel(session, "inTabset", selected="map") # switch to map tab
+    Blk_grp(dataset_grp()[Row_added,]$censusBlockGroupFips) # store chosen blkgrp
+    print(paste("---> pick in table", Blk_grp()))
     leafletProxy("map") %>%
       addPolylines(data=dataset_grp()[Row_added,],
                    color="red",
