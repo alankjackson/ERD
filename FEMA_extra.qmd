@@ -335,6 +335,8 @@ foo4 <- dePop(foo2[58,], 15)
 ```{r}
 FEMA <- readRDS(paste0(path, "FEMA_extra_", "IA", ".rds"))
 My_blkgrp <- "190130026045"
+My_blkgrp <- "010630600002"
+FEMA <- df_grp
 FEMA_data <- FEMA %>% filter(censusBlockGroupFips==My_blkgrp)
 County_code <- stringr::str_sub(FEMA_data$censusBlockGroupFips, start=3, end=5)
 state <- FEMA_data$State
@@ -356,9 +358,11 @@ Intro <- paste0("Data from FEMA, as of 3 Jan 2025, claims since 1978. ",
 #####################   Make demographics table
 Table <-
   FEMA_data %>% sf::st_drop_geometry() %>% 
-  select(Claims_Owner=Num_Claims_Own, Claims_Renter=Num_Claims_Rent, 
-         Claims_Total=Num_Claims, Pop_Owner=Owners, Pop_Renter=Renters, 
-         Pop_Total=Pop_acs, House_Owner=OwnersH, House_Renter=RentersH,
+  select(Claims_Owner=Num_Claims_Own_Primary, Claims_Renter=Num_Claims_Rent_Primary, 
+         Claims_Total=Num_Claims_Primary, Pop_Owner=Owners, Pop_Renter=Renters, 
+         Pop_Total=Pop_acs, House_Owner=OwnersH, 
+                    Claims_Vacation=Num_Claims_Vacation,
+         House_Renter=RentersH,
          House_Total=Households) %>% 
   pivot_longer(everything(),
                values_to="Values",
@@ -366,13 +370,20 @@ Table <-
                names_to=c("Category", "Subset")) %>% 
   pivot_wider(names_from=Category,
               values_from = Values) %>% 
+  mutate(charOrdered = fct_relevel(Subset, c('Owner', 'Renter', 'Vacation', 'Total'))) %>% 
+  arrange(charOrdered) %>%
+  select(-charOrdered) %>% 
   gt() %>% 
-    tab_header(title="Claim and Demographic Data") %>% 
+    tab_header(title="Claims Data") %>% 
     cols_label(
       Subset="Status",
       Claims="# Claims",
       Pop="Population",
       House="Households"
+    ) %>% 
+    tab_style(
+      style = list(cell_fill(color = "lightblue")),
+      locations = cells_body(columns = everything(), rows = 4)
     ) %>% 
     tab_footnote(
       footnote=md("*FEMA data*")
