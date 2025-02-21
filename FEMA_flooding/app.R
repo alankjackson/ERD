@@ -497,7 +497,7 @@ ui <- fluidPage(
       ),
   mainPanel(
     tabsetPanel(id="inTabset",
-                tabPanel("Map", value="map", leafletOutput("map")),
+                tabPanel("Map", value="map", leafletOutput("map", height="80vh")),
                 tabPanel("Table", value="table", DT::dataTableOutput("data"))
       )
     )
