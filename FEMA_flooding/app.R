@@ -9,6 +9,9 @@ library(leaflet)
 library(leafpop)
 library(shiny)
 library(gt)
+library(webshot2)
+library(pagedown)
+library(curl)
 # library(bslib) # for page layout
 
 path <- "/home/ajackson/Dropbox/Rprojects/ERD/Data/Final_FEMA_Flood_Data/"
@@ -143,69 +146,6 @@ Draw_dots <- function(dataset, drawme) {
   foo
 }
 
-### Popup based on the dot clicked
-# makePopupPlot <- function (BlkGrp, dataset) {
-#   plot <- dataset %>% 
-#     sf::st_drop_geometry() %>% 
-#     filter(censusBlockGroupFips==BlkGrp) %>% 
-#     select(floodEvents, floodNum) %>% 
-#     mutate(floodEvents=stringr::str_split(floodEvents, ", "),
-#            floodNum=stringr::str_split(floodNum, ", ")) %>% 
-#     pivot_longer(everything(),
-#                  values_to = "Values",
-#                  names_to = "Names") %>% 
-#     unnest(Values) %>% 
-#     group_by(Names) %>% 
-#     mutate(id = row_number()) %>% 
-#     ungroup() %>% 
-#     pivot_wider(id_cols=id,
-#                 names_from = "Names",
-#                 values_from = "Values") %>% 
-#     mutate(floodNum=as.numeric(floodNum)) %>% 
-#     mutate(floodEvents = fct_inorder(floodEvents)) %>%
-#     select(-id) %>% 
-#     ggplot(aes(x=floodEvents, y=floodNum)) +
-#     geom_col() +
-#     coord_flip() +
-#     labs(title=paste("Events in Blk Grp"),
-#          y="Number of Flood Claims",
-#          x="Flood Name")
-#   
-#   return(plot)
-# }
-
-####    Draw histograms
-
-# Draw_plots <- function(Grp_data, output) {
-#   print("draw plots")
-#   p1 <- Grp_data %>% 
-#     sf::st_drop_geometry() %>% 
-#     filter(Num_Claims_Primary>100) %>% 
-#     ggplot(aes(x=Num_Claims_Primary)) +
-#     geom_histogram() +
-#     labs(title="# of Claims/Blk-Grp",
-#          x="# of Primary Claims",
-#          y="Blk Grps")
-#   
-#   p2 <- Grp_data %>% 
-#     sf::st_drop_geometry() %>% 
-#     filter(ClaimsPerHousehold>0.2) %>% 
-#     ggplot(aes(x=ClaimsPerHousehold)) +
-#     geom_histogram() +
-#     labs(title="# of Claims/House",
-#          x="# of Primary Claims/House",
-#          y="Blk Grps")
-#   
-#   output$plot <- renderPlot({
-#     gridExtra::grid.arrange(p1, p2, 
-#                             top = grid::textGrob(
-#                               "Claims>100, Claims/House>0.2",
-#                               # gp = gpar(fontfamily = "HersheySerif" , fontsize = 9),
-#                               gp = grid::gpar(fontsize = 10)
-#                             ))
-#                             # top="Claims>100, Claims/House>0.2")
-#   })
-# }
 
 ####    Create URL for google map
 
@@ -258,10 +198,8 @@ make_Pdf <- function(filename, Blk_grp, dataset_grp, input){
   County_code <- stringr::str_sub(FEMA_data$censusBlockGroupFips, start=3, end=5)
   state <- FEMA_data$State
   comment <-  input$pdflabel
-  # comment <- "This is my comment about this data"
   County <- tigris::list_counties(state) %>% 
     filter(county_code==County_code)
-  # City <- stringr::str_replace(FEMA_data$nfipCommunityName, "Unk", "")
   Tempdir <- tempdir()
   
   Title <-paste("Report for Block Group", Blk_grp, "\n# in", 
@@ -456,34 +394,21 @@ make_Pdf <- function(filename, Blk_grp, dataset_grp, input){
   
   
   # Set up parameters to pass to Rmd document
-  # params <- list(n = input$slider)
+  
   Params <- list(Title=Title, Intro=Intro, comment=comment,
                  map_png=map_png, table_png=table_png, table2_png=table2_png, 
                  events_png=events_png)
   
-  # Knit the document, passing in the `params` list, and eval it in a
-  # child of the global environment (this isolates the code in the document
-  # from the code in this app).
-  # rmarkdown::render(tempReport, output_file = filename
-                    # params = params,
-                    # envir = new.env(parent = globalenv())
-  # )
   fileConn<-file(paste0(Tempdir, "/tempReport.rmd"))
   writeLines(tempReport, fileConn)
   close(fileConn)
   
-  # params <- list(Title=Title, Intro=Intro, comment=comment)
-  
   options(tinytex.verbose = TRUE)
   my_pdf <-  rmarkdown::render(paste0(Tempdir, "/tempReport.rmd"), 
-                            # output_file = "FEMA_flooding.pdf",
                             output_file = filename,
-                            # output_dir = Tempdir,
-                            # envir = parent.frame()
                             params = Params,
                             envir = new.env(parent = globalenv())
   )
-  # my_pdf
 }
 
 ###############################################################
@@ -506,7 +431,6 @@ expand_box <- function(bbox, pct=0.2, offset=1){
 # UI 
 #######################################################
 ui <- fluidPage(
-# ui <- page_fluid(
   
   # set up shiny js to be able to call our browseURL function
   shinyjs::useShinyjs(),
@@ -534,10 +458,13 @@ ui <- fluidPage(
         #   Alaska has no block groups that qualify
           selectInput('State', 'Choose a state', state.name[-2], selected="Alabama"),
           
+          HTML("<br/>"),
+          
           sliderInput('Pct_poverty', '> % in Poverty', 
                       min=25, max=Max_poverty,
                       value=25, 
                       step=5, round=0),
+          HTML("<br/>"),
           
           #   choose variable to color blocks with
           radioButtons("Block_var", "Color Blocks by:",
@@ -545,6 +472,8 @@ ui <- fluidPage(
                          "Vulnerability"="Vuln_Index",
                          "Num of Claims"="Num_Claims_Primary",
                          "Claims per House"="ClaimsPerHousehold")),
+          HTML("<br/>"),
+          HTML("<br/>"),
           
           ####    Google and FEMA buttons
           splitLayout(cellWidths = c("50%", "50%"),
@@ -558,16 +487,15 @@ ui <- fluidPage(
             "FEMA",
             "FEMA"
           ))),
+          HTML("<br/>"),
+          HTML("<br/>"),
           
           #####   Download PDF
           
           textInput("pdflabel", "Label for the PDF", "---"),
-          # div(id="dwnbutton", 
             downloadButton("FEMA_flooding", "Download PDF")
-          # )
       ),
   mainPanel(
-    # tabsetPanel(type = "tabs", id="inTabset",
     tabsetPanel(id="inTabset",
                 tabPanel("Map", value="map", leafletOutput("map")),
                 tabPanel("Table", value="table", DT::dataTableOutput("data"))
@@ -621,21 +549,11 @@ server <- function(input, output, session) {
     # print(paste("--1--", input$Pct_poverty))
     foo <- df_grp() %>% 
       filter(Pct_poverty>=input$Pct_poverty)# %>% 
-      # filter(ClaimsPerHousehold>=input$Min_house)# %>% 
-      # filter(Num_Claims_Primary>=input$Min_Claims)
     print(paste("--1.1--", nrow(foo)))
     updateSliderInput(session, "Pct_poverty", 
                       min = 25,
                       max = max(5*round((max(foo$Pct_poverty, na.rm=TRUE)+2.5)/5),15),
                       step = 5)
-    # updateSliderInput(session, "Min_claims", 
-    #                   min = 0,
-    #                   max = max(25*round((max(foo$Num_Claims_Primary, na.rm=TRUE)+12.5)/25),25),
-    #                   step = 25)
-    # updateSliderInput(session, "Min_house", 
-    #                   min = 0,
-    #                   max = max(0.1*round((max(foo$ClaimsPerHousehold, na.rm=TRUE)+0.05)/0.1),0),
-    #                   step = 0.1)
     foo
   })
   
@@ -655,7 +573,6 @@ server <- function(input, output, session) {
   observe({
     print("--6--")
     #   leafpop wants group to change on redraw
-    # drawme <- stringr::str_remove_all(now(), "-|:|\\s|\\.")
     print(paste(input$Block_var, max(Grp_data()[[input$Block_var]])))
     #   Reset color scale
     if (nrow(Grp_data())==0) {return()}
@@ -665,8 +582,6 @@ server <- function(input, output, session) {
                           max(Grp_data()[[input$Block_var]], na.rm=TRUE)),
                         na.color = "transparent")
     Draw_blkgrp(dataset_grp(), Grp_data(), pal, input)
-    # Draw_dots(dataset_grp(), drawme)
-    # Draw_plots(df_grp(), output)
   })
   
   observe({
@@ -676,7 +591,6 @@ server <- function(input, output, session) {
     if (nrow(Grp_data())==0) {return()}
     
     Draw_dots(dataset_grp(), drawme)
-    # Draw_plots(df_grp(), output)
   })
 
   #####################
@@ -737,47 +651,10 @@ server <- function(input, output, session) {
   #   Generate & Download PDF
   #####################
   
-  # observeEvent(Sel(), {
-  #   if (Sel()) {
-  #     shinyjs::enable("pdfButton")
-  #     shinyjs::runjs("$('#dwnbutton').removeAttr('title');")
-  #   } else {
-  #     shinyjs::disable("pdfButton")
-  #     shinyjs::runjs("$('#dwnbutton').attr('title', 'Select a Block Group');") 
-  #   }
-  # })
-  
-  # output$pdfButton <- downloadHandler("FEMA_flooding.pdf", function(theFile) {
-  #   # Here, your pdf-generator is provided with the "filename" that is used
-  #   # to provide the file for the user.
-  #   print(paste("-------  Blk_grp()", Blk_grp()))
-  #   if (length(Blk_grp())==0) {
-  #     showNotification("Select a Block Group first")
-  #     print("Return")
-  #     return()
-  #   }
-  #     make_Pdf(theFile, Blk_grp(), dataset_grp(), input)
-  # })
   output$FEMA_flooding <- downloadHandler(
     filename = "FEMA_flooding.pdf",
-    # filename = file.path(tempdir(), "FEMA_flooding.pdf"),
-    # print(paste("-------  Blk_grp()", Blk_grp())) 
-    # if (length(Blk_grp())==0) {
-    #   showNotification("Select a Block Group first")
-    #   print("Return")
-    #   return()
-    # }
     content = function(file) {
-      # tempReport <- file.path(tempdir(), "report.Rmd")
-      # file.copy("report.Rmd", tempReport, overwrite = TRUE)
-      
-      # params <- list(n = input$slider)
-      
       make_Pdf(file, Blk_grp(), dataset_grp(), input)
-      # rmarkdown::render(tempReport, output_file = file,
-      #                   params = params,
-      #                   envir = new.env(parent = globalenv())
-      # )
     }
   )
   
@@ -804,11 +681,6 @@ server <- function(input, output, session) {
 proxy <- DT::dataTableProxy('data')
 
 #############    Table selection controls
-
-# observe(event$id, {
-#   print(paste("proxy event", Select_grp()))
-#   proxy %>% selectRows(as.numeric(input$rows))
-# })
 
 Sel <- reactive({!is.null(input$data_rows_selected)}) # is there a selection?
 
