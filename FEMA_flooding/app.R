@@ -204,7 +204,7 @@ make_Pdf <- function(filename, Blk_grp, dataset_grp, input){
   
   Title <-paste("Report for Block Group", Blk_grp, "\n# in", 
                 County$county, "county,", state)
-  Intro <- paste0("Data from FEMA, as of 3 Jan 2025, claims since 1978. ",
+  Intro <- paste0("Data from FEMA, as of 3 Jan 2025, insurance claims since 1978. ",
                   "This block group has a poverty level of ",
                   FEMA_data$Pct_poverty, "% ",
                   "and a per capita income of ", scales::dollar(FEMA_data$Per_cap_in), ".\n\n",
