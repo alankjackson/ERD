@@ -1,0 +1,38 @@
+---
+title: "Valid Registrations Read and Trim"
+author: "Alan Jackson"
+format: html
+editor: source
+---
+
+##    Read and do initial processing on large Program Valid Registration file
+
+FEMA applicant-level data for the Individuals and Households Program
+
+```{r}
+
+library(tidyverse)
+
+path <- "/home/ajackson/Dropbox/Rprojects/ERD/Data/FEMA_HousingAssist/"
+
+#   Read CSV, filter, and output
+
+df <- read_csv(paste0(path, "IndividualsAndHouseholdsProgramValidRegistrations.csv"),
+               col_types=stringr::str_dup("c", 71))
+
+```
+
+##    What can we filter out?
+
+Looks like "Flood" is a good thing to filter on.
+
+```{r}
+unique(df$incidentType)
+
+df <- df %>% 
+  filter(incidentType=="Flood")
+
+```
+
+
+
