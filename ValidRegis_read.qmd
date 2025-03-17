@@ -15,7 +15,7 @@ library(tidyverse)
 
 path <- "/home/ajackson/Dropbox/Rprojects/ERD/Data/FEMA_HousingAssist/"
 
-#   Read CSV, filter, and output
+#   Read CSV, all as character.
 
 df <- read_csv(paste0(path, "IndividualsAndHouseholdsProgramValidRegistrations.csv"),
                col_types=stringr::str_dup("c", 71))
@@ -32,7 +32,72 @@ unique(df$incidentType)
 df <- df %>% 
   filter(incidentType=="Flood")
 
+#   Drop some fields
+
+df <- df %>% 
+  select(-incidentType, -sbaEligible, -sbaApproved, -registrationMethod)
+
+#   Reformat some fields
+
+df2 <- df %>% 
+mutate(declarationDate=date(ymd_hms(declarationDate)),
+       primaryResidence=as.logical(as.numeric(primaryResidence)),
+       homeOwnersInsurance=as.logical(as.numeric(homeOwnersInsurance)),
+       floodInsurance=as.logical(as.numeric(floodInsurance)),
+       ihpReferral=as.logical(as.numeric(ihpReferral)),
+       ihpEligible=as.logical(as.numeric(ihpEligible)),
+       haReferral=as.logical(as.numeric(haReferral)),
+       haEligible=as.logical(as.numeric(haEligible)),
+       onaReferral=as.logical(as.numeric(onaReferral)),
+       onaEligible=as.logical(as.numeric(onaEligible)),
+       utilitiesOut=as.logical(as.numeric(utilitiesOut)),
+       homeDamage=as.logical(as.numeric(homeDamage)),
+       autoDamage=as.logical(as.numeric(autoDamage)),
+       emergencyNeeds=as.logical(as.numeric(emergencyNeeds)),
+       foodNeed=as.logical(as.numeric(foodNeed)),
+       shelterNeed=as.logical(as.numeric(shelterNeed)),
+       accessFunctionalNeeds=as.logical(as.numeric(accessFunctionalNeeds)),
+       inspnIssued=as.logical(as.numeric(inspnIssued)),
+       inspnReturned=as.logical(as.numeric(inspnReturned)),
+       habitabilityRepairsRequired=as.logical(as.numeric(habitabilityRepairsRequired)),
+       destroyed=as.logical(as.numeric(destroyed)),
+       floodDamage=as.logical(as.numeric(floodDamage)),
+       foundationDamage=as.logical(as.numeric(foundationDamage)),
+       roofDamage=as.logical(as.numeric(roofDamage)),
+       tsaEligible=as.logical(as.numeric(tsaEligible)),
+       tsaCheckedIn=as.logical(as.numeric(tsaCheckedIn)),
+       rentalAssistanceEligible=as.logical(as.numeric(rentalAssistanceEligible)),
+       repairAssistanceEligible=as.logical(as.numeric(repairAssistanceEligible)),
+       replacementAssistanceEligible=as.logical(as.numeric(replacementAssistanceEligible)),
+       personalPropertyEligible=as.logical(as.numeric(personalPropertyEligible))
+       ) %>% 
+  mutate(ihpAmount=as.numeric(ihpAmount),
+         fipAmount=as.numeric(fipAmount),
+         haAmount=as.numeric(haAmount),
+         onaAmount=as.numeric(onaAmount),
+         rpfvl=as.numeric(rpfvl),
+         ppfvl=as.numeric(ppfvl),
+         waterLevel=as.numeric(waterLevel),
+         floodDamageAmount=as.numeric(floodDamageAmount),
+         foundationDamageAmount=as.numeric(foundationDamageAmount),
+         roofDamageAmount=as.numeric(roofDamageAmount),
+         rentalAssistanceAmount=as.numeric(rentalAssistanceAmount),
+         repairAmount=as.numeric(repairAmount),
+         replacementAmount=as.numeric(replacementAmount),
+         personalPropertyAmount=as.numeric(personalPropertyAmount)
+         )
+
 ```
+
+
+
+
+
+
+
+
+
+
 
 
 
