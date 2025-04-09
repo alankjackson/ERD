@@ -22,6 +22,8 @@ path <- "/home/ajackson/Dropbox/Rprojects/Curated_Data_Files/SocialVulnIndex/"
 
 ##    Walk through states slowly
 
+By census tract
+
 ```{r}
 
 States <- c("NY", "AK", "AZ", "AR", "CA", "LA", "CO", "CT", "DE", "DC",
@@ -44,4 +46,18 @@ for (astate in States) {
 
 ```
 
+##    By ZCTA
+
+
+```{r}
+
+result <- find_svi(year=2020,
+       geography="zcta")
+
+saveRDS(result, paste0(path, "SVI_zcta.rds"))
+
+
+
+
+```
 
