@@ -9,6 +9,8 @@ editor: source
 
 FEMA applicant-level data for the Individuals and Households Program
 
+https://www.fema.gov/openfema-data-page/individuals-and-households-program-valid-registrations-v1
+
 ```{r}
 
 library(tidyverse)
@@ -20,6 +22,22 @@ path <- "/home/ajackson/Dropbox/Rprojects/ERD/Data/FEMA_HousingAssist/"
 df <- read_csv(paste0(path, "IndividualsAndHouseholdsProgramValidRegistrations.csv"),
                col_types=stringr::str_dup("c", 71))
 
+df <- df %>% 
+  mutate(declarationDate=date(ymd_hms(declarationDate)))
+
+foo <- df %>% 
+  filter(declarationDate=="2024-05-17")
+foo2 <- df %>% 
+  filter(disasterNumber=="4781")
+
+foo3 <- df %>% filter(waterLevel==0) %>% filter(!is.na(highWaterLocation))
+
+#   Let's read in the disaster declaration summaries as well
+
+summaries <- read_csv(paste0(path, "DisasterDeclarationsSummaries.csv"),
+               col_types=stringr::str_dup("c", 28))
+
+
 ```
 
 ##    What can we filter out?
@@ -27,20 +45,23 @@ df <- read_csv(paste0(path, "IndividualsAndHouseholdsProgramValidRegistrations.c
 Looks like "Flood" is a good thing to filter on.
 
 ```{r}
+
 unique(df$incidentType)
 
-df <- df %>% 
-  filter(incidentType=="Flood")
+df2 <- df %>% 
+  filter(waterLevel>0)
+  # filter(incidentType=="Flood")
 
 #   Drop some fields
 
-df <- df %>% 
-  select(-incidentType, -sbaEligible, -sbaApproved, -registrationMethod)
+df2 <- df2 %>% 
+  select(-incidentType, -sbaEligible, -sbaApproved, -registrationMethod,
+         -ihpMax, -haMax, -onaMax)
 
 #   Reformat some fields
 
-df2 <- df %>% 
-mutate(declarationDate=date(ymd_hms(declarationDate)),
+df2 <- df2 %>% 
+mutate(
        primaryResidence=as.logical(as.numeric(primaryResidence)),
        homeOwnersInsurance=as.logical(as.numeric(homeOwnersInsurance)),
        floodInsurance=as.logical(as.numeric(floodInsurance)),
@@ -86,6 +107,8 @@ mutate(declarationDate=date(ymd_hms(declarationDate)),
          replacementAmount=as.numeric(replacementAmount),
          personalPropertyAmount=as.numeric(personalPropertyAmount)
          )
+
+saveRDS(df2, paste0(path, "ValidRegis.rds"))
 
 ```
 
